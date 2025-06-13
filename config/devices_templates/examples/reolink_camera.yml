@@ -1,0 +1,6 @@
+# Example: Reolink Camera
+name: reolink-cam-1
+type: camera
+ip: 192.168.110.20
+mac: "00:11:22:33:44:66"
+description: "Reolink Outdoor Camera"

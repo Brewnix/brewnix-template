@@ -1,0 +1,26 @@
+# Example Site Configuration Template
+# Copy this file to config/sites/<your-site>.yml and customize for your environment.
+
+site_name: example-site
+location: Example City, Country
+admin_email: admin@example.com
+
+# Network settings
+lan_subnet: 192.168.100.0/24
+wan_interface: eth0
+
+# Devices (see config/devices_templates/ for more)
+devices:
+  - name: example-nas
+    type: nas
+    ip: 192.168.100.10
+    mac: "00:11:22:33:44:55"
+    description: "Synology NAS"
+
+# VLANs
+vlans:
+  - id: 10
+    name: "IoT"
+    subnet: 192.168.110.0/24
+
+# ... more config ...
