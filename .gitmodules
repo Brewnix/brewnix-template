@@ -1,0 +1,3 @@
+[submodule "vendor/proxmox-firewall"]
+	path = vendor/proxmox-firewall
+	url = https://github.com/FyberLabs/proxmox-firewall
