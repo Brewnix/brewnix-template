@@ -1,13 +1,15 @@
-# Proxmox Firewall Template
+# Brewnix Template
 
-This repository is a **starter template** for private configuration management against a release of [proxmox-firewall](https://github.com/FyberLabs/proxmox-firewall).
+This repository is a **starter template** for private configuration management against releases of various server models deployed on baremetal servers for private SME networks.
 
 ## 🧩 How to Use
 
 1. **Fork this repository** to your own GitHub account.
-2. **Add the proxmox-firewall repo as a submodule:**
+2. **Add the server model submodules:**
    ```bash
    git submodule add https://github.com/FyberLabs/proxmox-firewall vendor/proxmox-firewall
+   git submodule add https://github.com/FyberLabs/proxmox-nas vendor/proxmox-nas
+   git submodule add https://github.com/FyberLabs/proxmox-k3b vendor/proxmox-k3b
    git submodule update --init --recursive
    ```
 3. **Store all your configuration, secrets, and inventory in the `config/` directory.**
@@ -25,10 +27,15 @@ This repository is a **starter template** for private configuration management a
 ## 📁 Directory Structure
 
 ```
-my-firewall-project/
+my-network-project/
 ├── config/                # Your site-specific configuration, secrets, inventory, etc.
 ├── vendor/
-│   └── proxmox-firewall/  # This repo as a submodule
+│   ├── proxmox-firewall/  # Firewall server model
+│   ├── proxmox-nas/       # NAS server model
+│   └── proxmox-k3b/       # Kubernetes cluster model
+├── bootstrap/             # Initial setup scripts
+├── scripts/               # Management scripts
+├── docs/                  # Documentation
 ├── .env                   # Your environment variables
 └── ...
 ```
@@ -43,8 +50,9 @@ my-firewall-project/
 - No risk of leaking secrets by updating the submodule
 
 ## 📝 Documentation
-- See [proxmox-firewall docs](https://github.com/FyberLabs/proxmox-firewall/tree/main/docs) for full usage and integration details.
-- See [Submodule Strategy](https://github.com/FyberLabs/proxmox-firewall/blob/main/docs/SUBMODULE_STRATEGY.md) for best practices.
+- See [Implementation Guide](docs/IMPLEMENTATION_GUIDE.md) for deployment details.
+- See [State Management Guide](docs/STATE_MANAGEMENT.md) for backup and recovery.
+- See vendor submodules for specific server model documentation.
 
 ---
 MIT License

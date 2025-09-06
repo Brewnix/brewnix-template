@@ -1,3 +1,9 @@
 [submodule "vendor/proxmox-firewall"]
 	path = vendor/proxmox-firewall
 	url = https://github.com/FyberLabs/proxmox-firewall
+[submodule "vendor/proxmox-k3b"]
+	path = vendor/proxmox-k3b
+	url = https://github.com/FyberLabs/proxmox-k3b
+[submodule "vendor/proxmox-nas"]
+	path = vendor/proxmox-nas
+	url = https://github.com/FyberLabs/proxmox-nas

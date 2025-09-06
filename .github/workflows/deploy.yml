@@ -1,0 +1,192 @@
+name: Deploy Proxmox Firewall
+
+on:
+  push:
+    branches: [ main, staging ]
+    paths:
+      - 'sites/**'
+      - 'ansible/**'
+      - 'terraform/**'
+      - 'scripts/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sites/**'
+      - 'ansible/**'
+      - 'terraform/**'
+      - 'scripts/**'
+
+env:
+  TF_VERSION: '1.5.7'
+  ANSIBLE_VERSION: '8.5.0'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      sites-changed: ${{ steps.sites.outputs.sites }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible==${{ env.ANSIBLE_VERSION }} ansible-lint
+
+      - name: Install dependencies
+        run: |
+          pip install -r proxmox-firewall/requirements.txt || true
+
+      - name: Validate configuration
+        run: |
+          # Validate YAML files
+          find sites/ -name "*.yml" -o -name "*.yaml" | xargs -I {} python -c "
+          import yaml, sys
+          try:
+            yaml.safe_load(open('{}'))
+            print(f'✓ {sys.argv[1]}')
+          except Exception as e:
+            print(f'✗ {sys.argv[1]}: {e}')
+            sys.exit(1)
+          " {} || exit 1
+
+      - name: Lint Ansible
+        run: |
+          ansible-lint ansible/ || true
+
+      - name: Validate Terraform
+        run: |
+          find sites/ -name "*.tf" -exec dirname {} \; | sort -u | xargs -I {} sh -c '
+            cd {}
+            terraform init -backend=false
+            terraform validate
+          '
+
+      - name: Check changed sites
+        id: sites
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED_SITES=$(git diff --name-only origin/${{ github.base_ref }} | grep '^sites/' | cut -d'/' -f2 | sort | uniq | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          else
+            CHANGED_SITES=$(git diff --name-only ${{ github.event.before }} | grep '^sites/' | cut -d'/' -f2 | sort | uniq | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          fi
+          echo "sites=$CHANGED_SITES" >> $GITHUB_OUTPUT
+          echo "Changed sites: $CHANGED_SITES"
+
+  deploy-staging:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging' || github.event_name == 'pull_request'
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible==${{ env.ANSIBLE_VERSION }}
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.STAGING_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.STAGING_PROXMOX_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to staging
+        run: |
+          export ANSIBLE_HOST_KEY_CHECKING=False
+          export TF_VAR_proxmox_host=${{ secrets.STAGING_PROXMOX_HOST }}
+
+          for site in $(echo '${{ needs.validate.outputs.sites-changed }}' | jq -r '.[]'); do
+            echo "Deploying site: $site"
+            ./scripts/deploy-site.sh "$site" --staging
+          done
+
+  deploy-production:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible==${{ env.ANSIBLE_VERSION }}
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.PRODUCTION_PROXMOX_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to production
+        run: |
+          export ANSIBLE_HOST_KEY_CHECKING=False
+          export TF_VAR_proxmox_host=${{ secrets.PRODUCTION_PROXMOX_HOST }}
+
+          for site in $(echo '${{ needs.validate.outputs.sites-changed }}' | jq -r '.[]'); do
+            echo "Deploying site: $site"
+            ./scripts/deploy-site.sh "$site" --production
+          done
+
+      - name: Backup state
+        run: |
+          ./scripts/backup-state.sh
+
+  notify:
+    needs: [validate, deploy-staging, deploy-production]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Notify deployment status
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: "Proxmox Firewall deployment ${{ job.status }}"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: env.SLACK_WEBHOOK_URL != null

@@ -1,0 +1,97 @@
+# Proxmox Firewall GitOps .gitignore
+
+# Terraform
+**/.terraform/
+**/terraform.tfstate*
+**/terraform.tfvars
+**/.terraform.lock.hcl
+**/terraform.log
+
+# Ansible
+**/inventory/hosts.yml
+**/ansible/facts/
+**/ansible/retry/
+**/test-results/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+/var/log/proxmox-firewall/
+
+# Backups (local copies)
+backups/
+*.tar.gz
+
+# SSH keys (never commit private keys!)
+**/*.pem
+**/*_rsa
+**/*_ed25519
+**/id_*
+!**/*.pub
+
+# Secrets (use git-crypt or similar)
+secrets/
+**/secrets/
+**/*.key
+**/*.p12
+**/*.pfx
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Temporary files
+tmp/
+temp/
+.cache/
+
+# GitOps specific
+# Keep terraform state in git (for GitOps)
+/sites/*/terraform/state/
+!/sites/*/terraform/state/.gitkeep
+
+# Ansible inventory (generated)
+/sites/*/ansible/inventory/
+!/sites/*/ansible/inventory/.gitkeep
+
+# Site-specific logs (don't commit)
+/sites/*/logs/
