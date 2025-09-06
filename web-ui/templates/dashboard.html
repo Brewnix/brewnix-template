@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brewnix - GitOps Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-server"></i> Brewnix
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                <a class="nav-link" href="/sites"><i class="fas fa-cogs"></i> Sites</a>
+                <a class="nav-link" href="/devices"><i class="fas fa-microchip"></i> Devices</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-md-12">
+                <h1><i class="fas fa-tachometer-alt"></i> Brewnix Dashboard</h1>
+                <p class="text-muted">GitOps-driven management for all server deployments</p>
+            </div>
+        </div>
+
+        <!-- System Overview -->
+        <div class="row mt-4">
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title text-primary">{{ system_status.total_sites }}</h5>
+                        <p class="card-text">Total Sites</p>
+                        <i class="fas fa-building fa-2x text-primary"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title text-success">{{ system_status.total_devices }}</h5>
+                        <p class="card-text">Registered Devices</p>
+                        <i class="fas fa-microchip fa-2x text-success"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title text-info">{{ system_status.server_types|length }}</h5>
+                        <p class="card-text">Server Types</p>
+                        <i class="fas fa-server fa-2x text-info"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title text-warning">{{ system_status.timestamp[:10] }}</h5>
+                        <p class="card-text">Last Updated</p>
+                        <i class="fas fa-clock fa-2x text-warning"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sites Overview -->
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-building"></i> Sites Overview</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Site Name</th>
+                                        <th>Server Type</th>
+                                        <th>Location</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for site in sites %}
+                                    <tr>
+                                        <td>{{ site.site_name }}</td>
+                                        <td>
+                                            <span class="badge bg-primary">{{ site.server_type|default('unknown')|upper }}</span>
+                                        </td>
+                                        <td>{{ site.location|default('N/A') }}</td>
+                                        <td>
+                                            <span class="badge bg-success">Active</span>
+                                        </td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-primary" onclick="deploySite('{{ site.site_name }}')">
+                                                    <i class="fas fa-rocket"></i> Deploy
+                                                </button>
+                                                <button class="btn btn-outline-secondary" onclick="createBootstrap('{{ site.site_name }}')">
+                                                    <i class="fas fa-usb"></i> Bootstrap
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Devices Overview -->
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-microchip"></i> Registered Devices</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Device ID</th>
+                                        <th>Type</th>
+                                        <th>Site</th>
+                                        <th>IP Address</th>
+                                        <th>Status</th>
+                                        <th>Registered</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for device in devices %}
+                                    <tr>
+                                        <td>{{ device.device_id }}</td>
+                                        <td>{{ device.device_type }}</td>
+                                        <td>{{ device.site_name }}</td>
+                                        <td>{{ device.ip_address|default('N/A') }}</td>
+                                        <td>
+                                            <span class="badge bg-{{ 'success' if device.status == 'registered' else 'secondary' }}">
+                                                {{ device.status }}
+                                            </span>
+                                        </td>
+                                        <td>{{ device.registered_at[:10] if device.registered_at else 'N/A' }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Server Types -->
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-layer-group"></i> Supported Server Types</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            {% for server_type in system_status.server_types %}
+                            <div class="col-md-3 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-body text-center">
+                                        <i class="fas fa-server fa-3x text-primary mb-3"></i>
+                                        <h6>{{ server_type|upper }}</h6>
+                                        <p class="text-muted small">
+                                            {% if server_type == 'proxmox-nas' %}
+                                                Proxmox VE with ZFS storage
+                                            {% elif server_type == 'proxmox-firewall' %}
+                                                Proxmox firewall appliance
+                                            {% elif server_type == 'k3s-cluster' %}
+                                                Kubernetes cluster with K3s
+                                            {% else %}
+                                                Custom server configuration
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-play"></i> Quick Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2 d-md-flex">
+                            <button class="btn btn-primary" onclick="refreshStatus()">
+                                <i class="fas fa-sync"></i> Refresh Status
+                            </button>
+                            <a href="/sites/new" class="btn btn-success">
+                                <i class="fas fa-plus"></i> Add New Site
+                            </a>
+                            <a href="/devices/register" class="btn btn-info">
+                                <i class="fas fa-microchip"></i> Register Device
+                            </a>
+                            <button class="btn btn-secondary" onclick="createBackup()">
+                                <i class="fas fa-save"></i> Create Backup
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        async function deploySite(siteName) {
+            if (confirm(`Deploy updates to ${siteName}?`)) {
+                try {
+                    const response = await fetch(`/deploy/${siteName}`, { method: 'POST' });
+                    const result = await response.text();
+                    alert('Deployment triggered: ' + result);
+                    location.reload();
+                } catch (error) {
+                    alert('Deployment failed: ' + error);
+                }
+            }
+        }
+
+        async function createBootstrap(siteName) {
+            const usbDevice = prompt('Enter USB device path (e.g., /dev/sdb):');
+            if (usbDevice) {
+                try {
+                    const formData = new FormData();
+                    formData.append('usb_device', usbDevice);
+
+                    const response = await fetch(`/bootstrap/${siteName}`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.text();
+                    alert('Bootstrap creation: ' + result);
+                    location.reload();
+                } catch (error) {
+                    alert('Bootstrap creation failed: ' + error);
+                }
+            }
+        }
+
+        function createBackup() {
+            alert('Backup functionality coming soon!');
+        }
+
+        function refreshStatus() {
+            location.reload();
+        }
+
+        // Auto-refresh every 60 seconds
+        setInterval(() => {
+            location.reload();
+        }, 60000);
+    </script>
+</body>
+</html>

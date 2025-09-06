@@ -3,6 +3,7 @@
 This guide provides a comprehensive roadmap for implementing GitOps for your Brewnix infrastructure across multiple server models.
 
 ## Table of Contents
+
 1. [Repository Setup](#repository-setup)
 2. [Bootstrap Process](#bootstrap-process)
 3. [Site Configuration](#site-configuration)
@@ -14,6 +15,7 @@ This guide provides a comprehensive roadmap for implementing GitOps for your Bre
 ## Repository Setup
 
 ### 1. Create Template Repository
+
 ```bash
 # Clone this template
 git clone https://github.com/yourorg/brewnix-template.git your-network-deployment
@@ -28,7 +30,8 @@ git-crypt add-gpg-user YOUR_GPG_KEY_ID
 ```
 
 ### 2. Repository Structure
-```
+
+```text
 your-network-deployment/
 ├── sites/                          # Site-specific configurations
 │   ├── production/                 # Production site
@@ -38,7 +41,7 @@ your-network-deployment/
 ├── vendor/                         # Server model submodules
 │   ├── proxmox-firewall/
 │   ├── proxmox-nas/
-│   └── proxmox-k3b/
+│   └── k3s-cluster/
 ├── .github/workflows/             # GitHub Actions
 ├── docs/                          # Documentation
 └── config/                        # Global configuration
@@ -47,7 +50,9 @@ your-network-deployment/
 ## Bootstrap Process
 
 ### Phase 1: USB Bootstrap
+
 1. **Create Bootstrap USB**:
+
    ```bash
    # On development machine
    ./bootstrap/create-bootstrap-usb.sh
@@ -58,23 +63,27 @@ your-network-deployment/
    - Run: `./bootstrap/usb-bootstrap.sh`
 
 3. **Initial Setup**:
+
    ```bash
    # On target system
    ./bootstrap/initial-config.sh
    ```
 
 ### Phase 2: GitHub Connectivity
+
 1. **Add SSH Key to GitHub**:
    - Copy SSH public key displayed during bootstrap
    - Add as deploy key to your repository
 
 2. **Connect to Repository**:
+
    ```bash
    # On target system
    ./bootstrap/github-connect.sh
    ```
 
 3. **Verify Connection**:
+
    ```bash
    cd /opt/brewnix-deployment
    git status
@@ -83,6 +92,7 @@ your-network-deployment/
 ## Site Configuration
 
 ### 1. Create Site Structure
+
 ```bash
 # Copy template site
 cp -r sites/site1 sites/production
@@ -92,6 +102,7 @@ vim sites/production/config/site.conf
 ```
 
 ### 2. Configure Site Variables
+
 ```bash
 # sites/production/config/site.conf
 SITE_NAME="production"
@@ -102,6 +113,7 @@ PROXMOX_HOST="10.1.50.1"
 ```
 
 ### 3. Setup Secrets
+
 ```bash
 # Create secrets directory
 mkdir -p sites/production/secrets
@@ -115,6 +127,7 @@ git commit -m "Add production secrets"
 ```
 
 ### 4. Configure Terraform
+
 ```bash
 # sites/production/terraform/main.tf (symlink to submodule)
 ln -s ../../../vendor/proxmox-firewall/terraform/main.tf .
@@ -128,6 +141,7 @@ network_prefix = "10.1"
 ## Deployment Workflow
 
 ### Manual Deployment
+
 ```bash
 # Deploy single site
 ./scripts/deploy-site.sh production
@@ -142,7 +156,8 @@ network_prefix = "10.1"
 ### Automated Deployment via GitHub Actions
 
 #### Setup GitHub Secrets
-```
+
+```text
 STAGING_SSH_PRIVATE_KEY     # SSH key for staging
 PRODUCTION_SSH_PRIVATE_KEY  # SSH key for production
 STAGING_PROXMOX_HOST        # Staging Proxmox IP
@@ -151,12 +166,14 @@ SLACK_WEBHOOK_URL           # For notifications
 ```
 
 #### Deployment Triggers
+
 - **Push to main**: Production deployment
 - **Push to staging**: Staging deployment
 - **Pull Request**: Validation only
 - **Manual**: Via GitHub Actions dispatch
 
 #### Deployment Process
+
 1. **Validation**: Lint, test, plan
 2. **Backup**: State backup before changes
 3. **Deploy**: Apply infrastructure changes
@@ -166,11 +183,13 @@ SLACK_WEBHOOK_URL           # For notifications
 ## State Management
 
 ### Terraform State Strategy
+
 - **Local**: Git-tracked in repository
 - **Backup**: Daily automated backups
 - **Recovery**: From git history or releases
 
 ### Backup Process
+
 ```bash
 # Manual backup
 ./scripts/backup-state.sh production
@@ -180,6 +199,7 @@ SLACK_WEBHOOK_URL           # For notifications
 ```
 
 ### State Recovery
+
 ```bash
 # From git history
 git checkout <commit-sha>
@@ -193,6 +213,7 @@ terraform apply
 ## Security Implementation
 
 ### SSH Key Management
+
 ```bash
 # Generate site-specific keys
 ssh-keygen -t ed25519 -C "production@brewnix" \
@@ -203,6 +224,7 @@ ssh-copy-id -i sites/production/ssh/deploy_key.pub root@10.1.50.1
 ```
 
 ### Secrets Encryption
+
 ```bash
 # Using git-crypt
 echo "secrets/" >> .gitattributes
@@ -215,6 +237,7 @@ echo "secret-value" | age -r $(cat sites/production/secrets/key.txt | grep publi
 ```
 
 ### Access Control
+
 - **GitHub**: Branch protection, required reviews
 - **SSH**: Key-based authentication only
 - **API**: Token-based with minimal permissions
@@ -223,6 +246,7 @@ echo "secret-value" | age -r $(cat sites/production/secrets/key.txt | grep publi
 ## Monitoring and Maintenance
 
 ### Automated Monitoring
+
 ```bash
 # System health checks
 */5 * * * * root /opt/brewnix/scripts/health-check.sh
@@ -235,6 +259,7 @@ echo "secret-value" | age -r $(cat sites/production/secrets/key.txt | grep publi
 ```
 
 ### Log Management
+
 ```bash
 # Centralized logging
 /var/log/brewnix/
@@ -245,6 +270,7 @@ echo "secret-value" | age -r $(cat sites/production/secrets/key.txt | grep publi
 ```
 
 ### Update Process
+
 ```bash
 # Update main codebase
 git submodule update --remote vendor/proxmox-firewall
@@ -261,6 +287,7 @@ git submodule update --remote vendor/proxmox-firewall
 ### Common Issues
 
 #### Bootstrap Problems
+
 ```bash
 # Check USB creation
 lsblk  # Verify USB device
@@ -272,6 +299,7 @@ curl -I https://github.com
 ```
 
 #### GitHub Connection Issues
+
 ```bash
 # Test SSH
 ssh -T git@github.com
@@ -284,6 +312,7 @@ git ls-remote origin
 ```
 
 #### Deployment Failures
+
 ```bash
 # Check logs
 tail -f /var/log/brewnix/deployment.log
@@ -298,13 +327,15 @@ terraform state list
 
 ### Recovery Procedures
 
-#### System Recovery
+#### System Recovery Fixes
+
 1. Bootstrap with USB
 2. Connect to GitHub
 3. Restore from latest backup
 4. Re-deploy configuration
 
-#### State Recovery
+#### State Recovery Fixes
+
 1. Identify backup point
 2. Restore state files
 3. Re-initialize Terraform
@@ -313,18 +344,21 @@ terraform state list
 ## Best Practices
 
 ### Development Workflow
+
 1. **Branch**: Create feature branches
 2. **Test**: Deploy to staging first
 3. **Review**: Pull request for changes
 4. **Deploy**: Automated production deployment
 
 ### Security Practices
+
 1. **Rotate Keys**: Regularly rotate SSH keys
 2. **Audit Logs**: Monitor all access
 3. **Backup**: Regular state backups
 4. **Updates**: Keep systems updated
 
 ### Operational Excellence
+
 1. **Documentation**: Keep configs documented
 2. **Automation**: Automate everything possible
 3. **Monitoring**: Monitor system health
@@ -333,21 +367,25 @@ terraform state list
 ## Migration from Existing Setup
 
 ### Phase 1: Assessment
+
 - Inventory current infrastructure
 - Document existing configurations
 - Identify manual processes to automate
 
 ### Phase 2: Preparation
+
 - Setup GitOps repository structure
 - Migrate configurations to new format
 - Test bootstrap process
 
 ### Phase 3: Migration
+
 - Deploy GitOps on staging environment
 - Migrate one site at a time
 - Validate functionality after each migration
 
 ### Phase 4: Optimization
+
 - Implement automated monitoring
 - Setup backup procedures
 - Train team on GitOps processes
@@ -355,16 +393,19 @@ terraform state list
 ## Support and Resources
 
 ### Documentation
+
 - [State Management Guide](./STATE_MANAGEMENT.md)
 - [Security Guidelines](./SECURITY.md)
 - [Troubleshooting Guide](./TROUBLESHOOTING.md)
 
 ### Tools and Scripts
+
 - `scripts/` - Management scripts
 - `bootstrap/` - Initial setup scripts
 - `.github/workflows/` - CI/CD pipelines
 
 ### Community Resources
+
 - [Proxmox Documentation](https://pve.proxmox.com/wiki/Main_Page)
 - [Terraform Documentation](https://www.terraform.io/docs)
 - [Ansible Documentation](https://docs.ansible.com)

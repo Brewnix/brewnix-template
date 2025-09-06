@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brewnix - Site Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-server"></i> Brewnix
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                <a class="nav-link active" href="/sites"><i class="fas fa-cogs"></i> Sites</a>
+                <a class="nav-link" href="/devices"><i class="fas fa-microchip"></i> Devices</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h1><i class="fas fa-cogs"></i> Site Management</h1>
+                        <p class="text-muted">Configure and manage all Brewnix sites</p>
+                    </div>
+                    <a href="/sites/new" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Add New Site
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Configured Sites</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if sites %}
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Site Name</th>
+                                        <th>Server Type</th>
+                                        <th>Location</th>
+                                        <th>Network</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for site in sites %}
+                                    <tr>
+                                        <td><strong>{{ site.site_name }}</strong></td>
+                                        <td>
+                                            <span class="badge bg-primary">{{ site.type|default(site.server_type, 'unknown')|upper }}</span>
+                                        </td>
+                                        <td>{{ site.location|default('N/A') }}</td>
+                                        <td>
+                                            VLAN {{ site.network.vlan_id|default('N/A') }}<br>
+                                            <small class="text-muted">{{ site.network.ip_range|default('N/A') }}</small>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-success">Configured</span>
+                                        </td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-primary" onclick="deploySite('{{ site.site_name }}')">
+                                                    <i class="fas fa-rocket"></i> Deploy
+                                                </button>
+                                                <button class="btn btn-outline-secondary" onclick="createBootstrap('{{ site.site_name }}')">
+                                                    <i class="fas fa-usb"></i> Bootstrap
+                                                </button>
+                                                <button class="btn btn-outline-info" onclick="viewConfig('{{ site.site_name }}')">
+                                                    <i class="fas fa-eye"></i> View
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-building fa-3x text-muted mb-3"></i>
+                            <h5>No sites configured yet</h5>
+                            <p class="text-muted">Create your first site to get started with Brewnix deployment.</p>
+                            <a href="/sites/new" class="btn btn-primary">
+                                <i class="fas fa-plus"></i> Create First Site
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Server Type Information -->
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-info-circle"></i> Supported Server Types</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="card border-primary">
+                                    <div class="card-body">
+                                        <h6 class="card-title text-primary">
+                                            <i class="fas fa-server"></i> Proxmox NAS
+                                        </h6>
+                                        <p class="card-text small">
+                                            Proxmox VE with ZFS storage, ideal for network-attached storage with VM/container hosting capabilities.
+                                        </p>
+                                        <ul class="list-unstyled small">
+                                            <li><i class="fas fa-check text-success"></i> ZFS storage pools</li>
+                                            <li><i class="fas fa-check text-success"></i> VM/container management</li>
+                                            <li><i class="fas fa-check text-success"></i> High availability</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-success">
+                                    <div class="card-body">
+                                        <h6 class="card-title text-success">
+                                            <i class="fas fa-shield-alt"></i> Proxmox Firewall
+                                        </h6>
+                                        <p class="card-text small">
+                                            Dedicated firewall appliance based on Proxmox VE with advanced networking features.
+                                        </p>
+                                        <ul class="list-unstyled small">
+                                            <li><i class="fas fa-check text-success"></i> Advanced firewall rules</li>
+                                            <li><i class="fas fa-check text-success"></i> VPN capabilities</li>
+                                            <li><i class="fas fa-check text-success"></i> Network monitoring</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-info">
+                                    <div class="card-body">
+                                        <h6 class="card-title text-info">
+                                            <i class="fas fa-cubes"></i> K3s Cluster
+                                        </h6>
+                                        <p class="card-text small">
+                                            Lightweight Kubernetes distribution for edge computing and container orchestration.
+                                        </p>
+                                        <ul class="list-unstyled small">
+                                            <li><i class="fas fa-check text-success"></i> Container orchestration</li>
+                                            <li><i class="fas fa-check text-success"></i> Service mesh ready</li>
+                                            <li><i class="fas fa-check text-success"></i> Edge computing</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Config Modal -->
+    <div class="modal fade" id="configModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Site Configuration</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <pre id="configContent">Loading...</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        async function deploySite(siteName) {
+            if (confirm(`Deploy updates to ${siteName}?`)) {
+                try {
+                    const response = await fetch(`/deploy/${siteName}`, { method: 'POST' });
+                    const result = await response.text();
+                    alert('Deployment triggered: ' + result);
+                    location.reload();
+                } catch (error) {
+                    alert('Deployment failed: ' + error);
+                }
+            }
+        }
+
+        async function createBootstrap(siteName) {
+            const usbDevice = prompt('Enter USB device path (e.g., /dev/sdb):');
+            if (usbDevice) {
+                try {
+                    const formData = new FormData();
+                    formData.append('usb_device', usbDevice);
+
+                    const response = await fetch(`/bootstrap/${siteName}`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.text();
+                    alert('Bootstrap creation: ' + result);
+                    location.reload();
+                } catch (error) {
+                    alert('Bootstrap creation failed: ' + error);
+                }
+            }
+        }
+
+        async function viewConfig(siteName) {
+            try {
+                const response = await fetch(`/api/sites`);
+                const sites = await response.json();
+                const site = sites.find(s => s.site_name === siteName);
+
+                if (site) {
+                    document.getElementById('configContent').textContent = JSON.stringify(site, null, 2);
+                    new bootstrap.Modal(document.getElementById('configModal')).show();
+                }
+            } catch (error) {
+                alert('Error loading configuration: ' + error);
+            }
+        }
+    </script>
+</body>
+</html>
