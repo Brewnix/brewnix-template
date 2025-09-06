@@ -3,7 +3,7 @@
 	url = https://github.com/FyberLabs/proxmox-firewall
 [submodule "vendor/proxmox-k3b"]
 	path = vendor/proxmox-k3b
-	url = https://github.com/FyberLabs/proxmox-k3b
+	url = https://github.com/FyberLabs/proxmox-k3b.git
 [submodule "vendor/proxmox-nas"]
 	path = vendor/proxmox-nas
-	url = https://github.com/FyberLabs/proxmox-nas
+	url = https://github.com/FyberLabs/proxmox-nas.git
