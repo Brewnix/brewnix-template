@@ -1,0 +1,148 @@
+# Development Environment Service Definitions
+# Services for development workstations and tools
+# Shows framework adaptability for different use cases
+
+vscode_server:
+  enabled: false
+  type: container
+  vmid: 301
+  template: ubuntu-22.04
+  resources:
+    cpu: 2
+    memory: 4096
+    storage: 60
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "8443:8443"
+  volumes:
+    - "/data/vscode:/home/coder"
+  monitoring:
+    enabled: true
+    port: 9090
+
+jupyter_lab:
+  enabled: false
+  type: container
+  vmid: 302
+  template: ubuntu-22.04
+  resources:
+    cpu: 4
+    memory: 8192
+    storage: 40
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "8888:8888"
+  volumes:
+    - "/data/jupyter:/home/jovyan/work"
+  gpu_passthrough: true
+  monitoring:
+    enabled: true
+    port: 8888
+
+development_desktop:
+  enabled: false
+  type: vm
+  vmid: 303
+  template: ubuntu-desktop-22.04
+  resources:
+    cpu: 8
+    memory: 16384
+    storage: 120
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  vnc:
+    enabled: true
+    port: 5903
+  usb_passthrough:
+    - "host=1d6b:0003"
+  backup:
+    enabled: true
+    schedule:
+      hour: 3
+      minute: 0
+    retention_days: 7
+
+docker_registry:
+  enabled: false
+  type: container
+  vmid: 304
+  template: ubuntu-22.04
+  resources:
+    cpu: 1
+    memory: 1024
+    storage: 80
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "5000:5000"
+  volumes:
+    - "/data/docker-registry:/var/lib/registry"
+  ssl:
+    enabled: true
+    cert_path: "/etc/ssl/certs/registry.crt"
+    key_path: "/etc/ssl/private/registry.key"
+  backup:
+    enabled: true
+    data_backup_enabled: true
+    data_paths:
+      - "/data/docker-registry"
+
+git_server:
+  enabled: false
+  type: vm
+  vmid: 305
+  template: ubuntu-22.04-cloud
+  resources:
+    cpu: 2
+    memory: 4096
+    storage: 100
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "22:22"
+    - "80:80"
+    - "443:443"
+  monitoring:
+    enabled: true
+    port: 9236
+  backup:
+    enabled: true
+    schedule:
+      hour: 2
+      minute: 30
+    retention_days: 30
+
+database_dev:
+  enabled: false
+  type: container
+  vmid: 306
+  template: ubuntu-22.04
+  resources:
+    cpu: 2
+    memory: 4096
+    storage: 60
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "5432:5432"  # PostgreSQL
+    - "3306:3306"  # MySQL
+    - "6379:6379"  # Redis
+  volumes:
+    - "/data/postgres:/var/lib/postgresql/data"
+    - "/data/mysql:/var/lib/mysql"
+    - "/data/redis:/data"
+  backup:
+    enabled: true
+    data_backup_enabled: true
+    data_paths:
+      - "/data/postgres"
+      - "/data/mysql"
+      - "/data/redis"

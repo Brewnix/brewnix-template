@@ -1,0 +1,161 @@
+---
+# Proxmox Security and Firewall Deployment Playbook
+# Complete network security infrastructure with firewall, IDS, and monitoring
+
+- name: Deploy Proxmox Security and Firewall Infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: true
+
+  vars_files:
+    - "{{ site_config_file | default('config/sites/security-site.yml') }}"
+
+  vars:
+    # Security-specific configuration
+    ansible_roles_path:
+      - "{{ playbook_dir }}/roles"
+      - "{{ playbook_dir }}/../../common/ansible/roles"
+      - "{{ playbook_dir }}/../proxmox-firewall/deployment/ansible/roles"
+    
+    # Service definitions for security infrastructure
+    enabled_services: "{{ lookup('file', 'services/security-services.yml') | from_yaml | default({}) }}"
+    
+    # Security environment defaults
+    security_config:
+      firewall_management_ip: "192.168.1.1"
+      security_zone: "dmz"
+      monitoring_retention: "90d"
+      alert_thresholds:
+        cpu_warning: 80
+        memory_warning: 85
+        disk_warning: 90
+    
+    # Network security zones
+    security_zones:
+      wan: "{{ enabled_services.opnsense_firewall.network.wan_interface | default('wan') }}"
+      lan: "{{ enabled_services.opnsense_firewall.network.lan_interface | default('lan') }}"
+      dmz: "dmz"
+      management: "mgmt"
+
+  pre_tasks:
+    - name: Validate security infrastructure configuration
+      ansible.builtin.assert:
+        that:
+          - site_name is defined
+          - network is defined
+          - proxmox_api_password is defined
+          - security_config is defined
+        fail_msg: "Security infrastructure configuration is incomplete"
+
+    - name: Check if running on Proxmox VE
+      ansible.builtin.stat:
+        path: /etc/pve
+      register: pve_check
+      
+    - name: Verify Proxmox VE installation
+      ansible.builtin.fail:
+        msg: "This playbook must be run on a Proxmox VE host"
+      when: not pve_check.stat.exists
+
+    - name: Display security deployment information
+      ansible.builtin.debug:
+        msg: |
+          Deploying Proxmox Security Infrastructure: {{ site_name }}
+          Network: {{ network.vlan_id | default('N/A') }} - {{ network.ip_range }}
+          Firewall Management: {{ security_config.firewall_management_ip }}
+          Security Zone: {{ security_config.security_zone }}
+          Monitoring Retention: {{ security_config.monitoring_retention }}
+          Enabled Services: {{ enabled_services.keys() | list | join(', ') if enabled_services else 'None configured' }}
+
+  roles:
+    - role: proxmox_host_setup
+      tags:
+        - host_setup
+        - repositories
+        - networking
+        
+    - role: security_infrastructure_config
+      tags:
+        - security_config
+        - firewall_setup
+        
+    - role: service_management
+      tags:
+        - services
+        - security_services
+      vars:
+        service_type: "security"
+        
+    # Integration with existing proxmox-firewall roles
+    - role: ../proxmox-firewall/deployment/ansible/roles/proxmox_setup
+      tags:
+        - firewall_integration
+        - proxmox_firewall
+      when: integrate_proxmox_firewall | default(true)
+
+  post_tasks:
+    - name: Security infrastructure deployment summary
+      ansible.builtin.debug:
+        msg: |
+          Proxmox Security Infrastructure deployment complete!
+          Host: {{ ansible_fqdn }}
+          Management IP: {{ network.management_ip | default(ansible_default_ipv4.address) }}
+          
+          Security Services:
+          {% if enabled_services.opnsense_firewall is defined and enabled_services.opnsense_firewall.enabled %}
+          - OPNsense Firewall: https://{{ enabled_services.opnsense_firewall.network.ip }}
+          {% endif %}
+          {% if enabled_services.suricata_ids is defined and enabled_services.suricata_ids.enabled %}
+          - Suricata IDS: https://{{ enabled_services.suricata_ids.network.ip }}
+          {% endif %}
+          {% if enabled_services.ntopng_monitor is defined and enabled_services.ntopng_monitor.enabled %}
+          - Ntopng Monitor: https://{{ enabled_services.ntopng_monitor.network.ip }}:3000
+          {% endif %}
+          {% if enabled_services.pihole_dns is defined and enabled_services.pihole_dns.enabled %}
+          - Pi-hole DNS: https://{{ enabled_services.pihole_dns.network.ip }}/admin
+          {% endif %}
+          {% if enabled_services.step_ca is defined and enabled_services.step_ca.enabled %}
+          - Step CA: https://{{ enabled_services.step_ca.network.ip }}:9000
+          {% endif %}
+          
+          Optional Services:
+          {% if enabled_services.strongswan_vpn is defined and enabled_services.strongswan_vpn.enabled %}
+          - StrongSwan VPN: {{ enabled_services.strongswan_vpn.network.ip }}
+          {% endif %}
+          {% if enabled_services.security_onion_siem is defined and enabled_services.security_onion_siem.enabled %}
+          - Security Onion SIEM: https://{{ enabled_services.security_onion_siem.network.ip }}
+          {% endif %}
+          
+          Network Security Zones:
+          - WAN: {{ security_zones.wan }}
+          - LAN: {{ security_zones.lan }}  
+          - DMZ: {{ security_zones.dmz }}
+          - Management: {{ security_zones.management }}
+          
+          Proxmox Web UI: https://{{ ansible_default_ipv4.address }}:8006
+          
+          Next steps:
+          1. Configure firewall rules in OPNsense
+          2. Set up IDS rule sets in Suricata
+          3. Configure network monitoring in Ntopng
+          4. Set up DNS filtering in Pi-hole
+          5. Generate and distribute certificates from Step CA
+
+    - name: Save security deployment state
+      ansible.builtin.copy:
+        content: |
+          # Proxmox Security Infrastructure Deployment Status
+          Deployment completed at: {{ ansible_date_time.iso8601 }}
+          Site: {{ site_name }}
+          Host: {{ ansible_fqdn }}
+          Type: Security Infrastructure
+          Firewall Management: {{ security_config.firewall_management_ip }}
+          Security Zone: {{ security_config.security_zone }}
+          Monitoring Retention: {{ security_config.monitoring_retention }}
+          Network Zones: {{ security_zones.keys() | list | join(', ') }}
+          Services Deployed: {{ enabled_services.keys() | list | join(', ') if enabled_services else 'None' }}
+          Proxmox Firewall Integration: {{ integrate_proxmox_firewall | default(true) }}
+          Status: SUCCESS
+        dest: /var/log/proxmox-security-deployment.log
+        mode: '0644'

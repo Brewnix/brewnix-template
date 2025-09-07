@@ -1,0 +1,149 @@
+---
+# Proxmox Development Server Deployment Playbook
+# Complete development environment with IDEs, databases, and development tools
+
+- name: Deploy Proxmox Development Server
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: true
+
+  vars_files:
+    - "{{ site_config_file | default('config/sites/dev-site.yml') }}"
+
+  vars:
+    # Development-specific configuration
+    ansible_roles_path:
+      - "{{ playbook_dir }}/roles"
+      - "{{ playbook_dir }}/../../common/ansible/roles"
+    
+    # Service definitions for development environment
+    enabled_services: "{{ lookup('file', 'services/dev-services.yml') | from_yaml | default({}) }}"
+    
+    # Development environment defaults
+    dev_environment_config:
+      workspace_path: "/opt/development"
+      user_workspace: "/home/developer"
+      default_ports:
+        code_server: 8080
+        jupyter: 8888
+        gitlab: 80
+        pgadmin: 5050
+        adminer: 8081
+    
+    # Database configuration
+    development_databases:
+      postgresql: "{{ enabled_services.postgresql.enabled | default(false) }}"
+      mysql: "{{ enabled_services.mysql.enabled | default(false) }}"
+      mongodb: "{{ enabled_services.mongodb.enabled | default(false) }}"
+      redis: "{{ enabled_services.redis.enabled | default(false) }}"
+
+  pre_tasks:
+    - name: Validate development server configuration
+      ansible.builtin.assert:
+        that:
+          - site_name is defined
+          - network is defined
+          - proxmox_api_password is defined
+          - dev_environment_config is defined
+        fail_msg: "Development server configuration is incomplete"
+
+    - name: Check if running on Proxmox VE
+      ansible.builtin.stat:
+        path: /etc/pve
+      register: pve_check
+      
+    - name: Verify Proxmox VE installation
+      ansible.builtin.fail:
+        msg: "This playbook must be run on a Proxmox VE host"
+      when: not pve_check.stat.exists
+
+    - name: Display development deployment information
+      ansible.builtin.debug:
+        msg: |
+          Deploying Proxmox Development Server: {{ site_name }}
+          Network: {{ network.vlan_id | default('N/A') }} - {{ network.ip_range }}
+          Workspace Path: {{ dev_environment_config.workspace_path }}
+          User Workspace: {{ dev_environment_config.user_workspace }}
+          Databases: {{ development_databases.keys() | select('extract', development_databases) | list | join(', ') if development_databases.values() | list | select | list else 'None configured' }}
+          Enabled Services: {{ enabled_services.keys() | list | join(', ') if enabled_services else 'None configured' }}
+
+  roles:
+    - role: proxmox_host_setup
+      tags:
+        - host_setup
+        - repositories
+        - networking
+        
+    - role: development_environment_config
+      tags:
+        - dev_config
+        - environment_setup
+        
+    - role: service_management
+      tags:
+        - services
+        - dev_services
+      vars:
+        service_type: "development"
+
+  post_tasks:
+    - name: Development server deployment summary
+      ansible.builtin.debug:
+        msg: |
+          Proxmox Development Server deployment complete!
+          Host: {{ ansible_fqdn }}
+          Management IP: {{ network.management_ip | default(ansible_default_ipv4.address) }}
+          Workspace: {{ dev_environment_config.workspace_path }}
+          
+          Available Services:
+          {% if enabled_services.code_server is defined and enabled_services.code_server.enabled %}
+          - Code Server (VS Code): https://{{ enabled_services.code_server.network.ip | default('VM-IP') }}:{{ dev_environment_config.default_ports.code_server }}
+          {% endif %}
+          {% if enabled_services.jupyter_lab is defined and enabled_services.jupyter_lab.enabled %}
+          - Jupyter Lab: https://{{ enabled_services.jupyter_lab.network.ip | default('VM-IP') }}:{{ dev_environment_config.default_ports.jupyter }}
+          {% endif %}
+          {% if enabled_services.gitlab_ce is defined and enabled_services.gitlab_ce.enabled %}
+          - GitLab CE: https://{{ enabled_services.gitlab_ce.network.ip | default('VM-IP') }}
+          {% endif %}
+          {% if enabled_services.pgadmin is defined and enabled_services.pgadmin.enabled %}
+          - PGAdmin: https://{{ enabled_services.pgadmin.network.ip | default('VM-IP') }}:{{ dev_environment_config.default_ports.pgadmin }}
+          {% endif %}
+          
+          Database Services:
+          {% if development_databases.postgresql %}
+          - PostgreSQL: Port 5432 ({{ enabled_services.postgresql.network.ip | default('VM-IP') }})
+          {% endif %}
+          {% if development_databases.mysql %}
+          - MySQL: Port 3306 ({{ enabled_services.mysql.network.ip | default('VM-IP') }})
+          {% endif %}
+          {% if development_databases.mongodb %}
+          - MongoDB: Port 27017 ({{ enabled_services.mongodb.network.ip | default('VM-IP') }})
+          {% endif %}
+          {% if development_databases.redis %}
+          - Redis: Port 6379 ({{ enabled_services.redis.network.ip | default('VM-IP') }})
+          {% endif %}
+          
+          Proxmox Web UI: https://{{ ansible_default_ipv4.address }}:8006
+          
+          Next steps:
+          1. Access Code Server for web-based development
+          2. Configure Git repositories in GitLab
+          3. Set up database connections in development tools
+          4. Configure backup strategies for development data
+
+    - name: Save development deployment state
+      ansible.builtin.copy:
+        content: |
+          # Proxmox Development Server Deployment Status
+          Deployment completed at: {{ ansible_date_time.iso8601 }}
+          Site: {{ site_name }}
+          Host: {{ ansible_fqdn }}
+          Type: Development Environment
+          Workspace Path: {{ dev_environment_config.workspace_path }}
+          User Workspace: {{ dev_environment_config.user_workspace }}
+          Databases Enabled: {{ development_databases.keys() | select('extract', development_databases) | list | join(', ') if development_databases.values() | list | select | list else 'None' }}
+          Services Deployed: {{ enabled_services.keys() | list | join(', ') if enabled_services else 'None' }}
+          Status: SUCCESS
+        dest: /var/log/proxmox-development-deployment.log
+        mode: '0644'

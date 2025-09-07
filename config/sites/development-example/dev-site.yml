@@ -1,0 +1,225 @@
+---
+# Development Server Site Configuration Example
+# Complete development environment with IDEs, databases, and tools
+
+# Site identification
+site_name: "development-environment"
+site_type: "development-server"
+deployment_environment: "development"
+
+# Network configuration
+network:
+  vlan_id: 200
+  ip_range: "192.168.200.0/24"
+  management_ip: "192.168.200.10"
+  gateway: "192.168.200.1"
+  dns_servers: "192.168.200.1,8.8.8.8"
+  search_domain: "dev.local"
+
+# Proxmox configuration
+proxmox_api_host: "{{ network.management_ip }}"
+proxmox_api_user: "root@pam"
+proxmox_api_password: "{{ vault_proxmox_password }}"
+proxmox_node: "pve1"
+proxmox_storage_pool: "local-lvm"
+proxmox_iso_storage: "local"
+
+# Development environment configuration
+dev_environment_config:
+  workspace_path: "/opt/development"
+  user_workspace: "/home/developer"
+  default_ports:
+    code_server: 8080
+    jupyter: 8888
+    gitlab: 80
+    pgadmin: 5050
+    adminer: 8081
+  
+  # Development tools and frameworks
+  development_stacks:
+    - python
+    - nodejs
+    - java
+    - dotnet
+    - golang
+    - rust
+  
+  # IDE configurations
+  ides:
+    vscode_extensions:
+      - ms-python.python
+      - ms-vscode.vscode-typescript-next
+      - ms-vscode.vscode-json
+      - ms-vscode.docker
+      - hashicorp.terraform
+    
+    jupyter_kernels:
+      - python3
+      - nodejs
+      - scala
+
+# Database configuration
+development_databases:
+  postgresql: true
+  mysql: true
+  mongodb: true
+  redis: true
+  influxdb: false
+  elasticsearch: false
+
+# Service integrations
+service_integrations:
+  version_control:
+    gitlab_ce: true
+    gitea: false
+  
+  ci_cd:
+    jenkins: false
+    drone: false
+    gitlab_runner: true
+  
+  monitoring:
+    prometheus: false
+    grafana: false
+    uptime_kuma: true
+  
+  documentation:
+    bookstack: true
+    outline: false
+  
+  communication:
+    rocketchat: false
+    mattermost: false
+
+# Development tools configuration
+dev_tools_config:
+  package_managers:
+    npm: true
+    yarn: true
+    pip: true
+    maven: true
+    gradle: true
+    nuget: true
+    cargo: true
+  
+  containerization:
+    docker: true
+    podman: false
+    docker_compose: true
+    kubernetes_tools: true
+  
+  testing_tools:
+    selenium_grid: false
+    postman: false
+    k6: false
+
+# Security configuration for development
+dev_security_config:
+  ssl_certificates: true
+  ldap_integration: false
+  oauth_providers: []
+  backup_encryption: true
+  
+  # Development-specific security
+  allow_root_containers: true
+  enable_debug_mode: true
+  insecure_registries: ["localhost:5000"]
+
+# Storage configuration
+storage_config:
+  project_storage: "100GB"
+  database_storage: "50GB"
+  cache_storage: "20GB"
+  backup_storage: "200GB"
+  
+  # Shared volumes for development
+  shared_volumes:
+    - name: "project-data"
+      size: "100GB"
+      mount_point: "/opt/development/projects"
+    - name: "database-data"
+      size: "50GB"
+      mount_point: "/opt/development/databases"
+
+# Backup configuration
+backup_config:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retention: "30d"
+  include_paths:
+    - "/opt/development/projects"
+    - "/home/developer"
+    - "/opt/development/databases"
+  exclude_patterns:
+    - "node_modules"
+    - ".git"
+    - "*.tmp"
+    - "*.log"
+
+# Development workflow configuration
+workflow_config:
+  auto_save_interval: "5m"
+  git_auto_commit: false
+  test_on_save: false
+  linting_on_save: true
+  
+  # Code quality tools
+  code_quality:
+    sonarqube: false
+    code_climate: false
+    eslint: true
+    prettier: true
+    black: true
+    
+# Resource limits
+resource_limits:
+  max_concurrent_builds: 3
+  max_memory_per_container: "4GB"
+  max_cpu_per_container: "2"
+  total_memory_limit: "16GB"
+  total_cpu_limit: "8"
+
+# Cloud-init configuration
+cloud_init:
+  user: "developer"
+  password: "{{ vault_developer_password }}"
+  ssh_keys:
+    - "{{ vault_ssh_public_key }}"
+  timezone: "UTC"
+  packages:
+    - git
+    - curl
+    - wget
+    - htop
+    - nano
+    - vim
+    - tmux
+    - screen
+
+# Network services
+network_services:
+  reverse_proxy: true
+  load_balancer: false
+  service_discovery: false
+  
+  # Development-specific networking
+  port_forwarding:
+    - { from: 3000, to: 3000, service: "react_dev" }
+    - { from: 8000, to: 8000, service: "django_dev" }
+    - { from: 4200, to: 4200, service: "angular_dev" }
+
+# Monitoring and logging
+monitoring_config:
+  metrics_collection: true
+  log_aggregation: true
+  performance_monitoring: true
+  
+  # Development-specific monitoring
+  hot_reload_monitoring: true
+  build_time_tracking: true
+  dependency_scanning: false
+
+# Integration with other vendors
+vendor_integrations:
+  k3s_cluster: false  # Deploy to K3S cluster
+  nas_storage: true   # Use NAS for project storage
+  security_firewall: false  # Basic security only

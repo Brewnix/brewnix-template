@@ -1,0 +1,140 @@
+---
+# Proxmox Subscription Nag Screen Suppression
+# This task file removes the subscription nag screen when using community repositories
+
+- name: Check if Proxmox web interface files exist
+  ansible.builtin.stat:
+    path: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+  register: proxmoxlib_stat
+
+- name: Display nag suppression information
+  ansible.builtin.debug:
+    msg: |
+      Suppressing Proxmox subscription nag screen...
+      This is safe when using community repositories.
+      Original files will be backed up.
+
+- name: Backup original proxmoxlib.js
+  ansible.builtin.copy:
+    src: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+    dest: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js.backup-{{ ansible_date_time.epoch }}
+    remote_src: true
+    mode: '0644'
+    owner: root
+    group: root
+  when: proxmoxlib_stat.stat.exists
+
+- name: Remove subscription nag using sed (method 1)
+  ansible.builtin.shell: |
+    sed -i.bak "s/data.status !== 'Active'/false/g" /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+  args:
+    creates: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js.bak
+  when: proxmoxlib_stat.stat.exists
+  notify: Restart proxmox services
+  register: sed_result
+
+- name: Remove subscription check dialog (method 2)
+  ansible.builtin.replace:
+    path: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+    regexp: "if \\(res === null \\|\\| res === undefined \\|\\| !res \\|\\| res\\.data\\.status !== 'Active'\\)"
+    replace: "if (false)"
+  when: 
+    - proxmoxlib_stat.stat.exists
+    - sed_result is failed or sed_result.changed == false
+  notify: Restart proxmox services
+
+- name: Remove subscription status check (method 3) 
+  ansible.builtin.replace:
+    path: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+    regexp: "\\s+res\\.data\\.status !== 'Active'"
+    replace: " false"
+  when: proxmoxlib_stat.stat.exists
+  notify: Restart proxmox services
+  failed_when: false
+
+- name: Create nag suppression verification script
+  ansible.builtin.copy:
+    content: |
+      #!/bin/bash
+      # Proxmox Nag Screen Suppression Verification
+      
+      echo "Checking Proxmox nag screen suppression..."
+      
+      PROXMOXLIB="/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js"
+      
+      if [ ! -f "$PROXMOXLIB" ]; then
+          echo "ERROR: Proxmox library file not found: $PROXMOXLIB"
+          exit 1
+      fi
+      
+      # Check for successful modifications
+      if grep -q "data.status !== 'Active'" "$PROXMOXLIB"; then
+          echo "WARNING: Subscription check still present in proxmoxlib.js"
+          echo "Manual intervention may be required"
+          exit 1
+      else
+          echo "SUCCESS: Subscription nag screen has been suppressed"
+      fi
+      
+      # Check if services are running
+      if systemctl is-active --quiet pveproxy && systemctl is-active --quiet pvedaemon; then
+          echo "SUCCESS: Proxmox services are running"
+      else
+          echo "WARNING: Some Proxmox services may not be running"
+          echo "Try: systemctl restart pveproxy pvedaemon"
+      fi
+      
+      echo ""
+      echo "Next steps:"
+      echo "1. Clear your browser cache (Ctrl+Shift+Delete)"
+      echo "2. Refresh the Proxmox web interface (Ctrl+F5)"
+      echo "3. The subscription nag should no longer appear"
+    dest: /usr/local/bin/verify-nag-suppression.sh
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Create nag suppression restore script
+  ansible.builtin.copy:
+    content: |
+      #!/bin/bash
+      # Restore original Proxmox files (if needed)
+      
+      PROXMOXLIB="/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js"
+      
+      echo "Available backup files:"
+      ls -la /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js.backup-* 2>/dev/null || echo "No backups found"
+      
+      if [ "$1" ]; then
+          if [ -f "$1" ]; then
+              echo "Restoring from backup: $1"
+              cp "$1" "$PROXMOXLIB"
+              systemctl restart pveproxy pvedaemon
+              echo "Restored original file. Nag screen will reappear."
+          else
+              echo "Backup file not found: $1"
+              exit 1
+          fi
+      else
+          echo "Usage: $0 <backup_file>"
+          echo "Example: $0 /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js.backup-1234567890"
+      fi
+    dest: /usr/local/bin/restore-nag-screen.sh
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Display nag suppression completion message
+  ansible.builtin.debug:
+    msg: |
+      Proxmox subscription nag screen suppression completed!
+      
+      What was done:
+      - Backed up original proxmoxlib.js file
+      - Modified subscription status checks to always return false
+      - Created verification and restore scripts
+      
+      To verify: run /usr/local/bin/verify-nag-suppression.sh
+      To restore: run /usr/local/bin/restore-nag-screen.sh <backup_file>
+      
+      Important: Clear your browser cache and refresh the page to see changes.

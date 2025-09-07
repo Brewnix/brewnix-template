@@ -1,0 +1,305 @@
+---
+# Security and Firewall Site Configuration Example
+# Complete network security infrastructure
+
+# Site identification
+site_name: "security-infrastructure"
+site_type: "security-firewall"
+deployment_environment: "production"
+
+# Network configuration
+network:
+  vlan_id: 10
+  ip_range: "192.168.10.0/24"
+  management_ip: "192.168.10.10"
+  gateway: "192.168.10.1"
+  dns_servers: "192.168.10.16,8.8.8.8"  # Pi-hole first
+  search_domain: "sec.local"
+
+# Proxmox configuration
+proxmox_api_host: "{{ network.management_ip }}"
+proxmox_api_user: "root@pam"
+proxmox_api_password: "{{ vault_proxmox_password }}"
+proxmox_node: "pve1"
+proxmox_storage_pool: "local-lvm"
+proxmox_iso_storage: "local"
+
+# Security infrastructure configuration
+security_config:
+  firewall_management_ip: "192.168.10.1"
+  security_zone: "dmz"
+  monitoring_retention: "90d"
+  alert_thresholds:
+    cpu_warning: 80
+    memory_warning: 85
+    disk_warning: 90
+    
+  # Security policies
+  default_policies:
+    default_deny: true
+    log_all_traffic: true
+    geo_blocking: true
+    rate_limiting: true
+
+# Network security zones
+security_zones:
+  wan: "wan"
+  lan: "lan"
+  dmz: "dmz"
+  management: "mgmt"
+  guest: "guest"
+  iot: "iot"
+
+# Firewall configuration
+firewall_config:
+  vendor: "opnsense"
+  high_availability: false
+  wan_interfaces:
+    - name: "wan"
+      type: "dhcp"
+      monitor: true
+  
+  lan_interfaces:
+    - name: "lan"
+      ip: "192.168.10.1/24"
+      dhcp_enabled: true
+      dhcp_range: "192.168.10.100-192.168.10.199"
+  
+  # Traffic rules
+  firewall_rules:
+    allow_web_admin: true
+    allow_ssh_management: true
+    allow_icmp: true
+    deny_tor: true
+    deny_p2p: true
+    
+  # Advanced features
+  advanced_features:
+    intrusion_detection: true
+    intrusion_prevention: true
+    content_filtering: true
+    bandwidth_monitoring: true
+    traffic_shaping: true
+
+# Intrusion Detection System configuration
+ids_config:
+  engine: "suricata"
+  rule_sets:
+    emerging_threats: true
+    et_open: true
+    snort_community: true
+    custom_rules: true
+  
+  monitoring:
+    interfaces: ["lan", "dmz", "guest"]
+    full_packet_capture: false
+    metadata_only: true
+  
+  alerting:
+    threshold: "medium"
+    email_alerts: true
+    syslog_alerts: true
+    webhook_alerts: false
+
+# DNS security configuration
+dns_security:
+  primary_dns: "pihole"
+  upstream_resolvers:
+    - "8.8.8.8"
+    - "8.8.4.4"
+    - "1.1.1.1"
+  
+  filtering:
+    ad_blocking: true
+    malware_blocking: true
+    phishing_blocking: true
+    adult_content_blocking: false
+  
+  custom_blocklists:
+    - "https://someonewhocares.org/hosts/zero/hosts"
+    - "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+  
+  logging:
+    query_logging: true
+    log_retention: "30d"
+
+# VPN configuration
+vpn_config:
+  ipsec_enabled: true
+  openvpn_enabled: true
+  wireguard_enabled: false
+  
+  # Site-to-site VPN
+  site_to_site:
+    enabled: false
+    peers: []
+  
+  # Remote access VPN
+  remote_access:
+    max_clients: 50
+    client_subnet: "192.168.100.0/24"
+    split_tunneling: true
+    
+  # Authentication
+  authentication:
+    local_users: true
+    ldap_integration: false
+    certificate_auth: true
+
+# Certificate Authority configuration
+certificate_authority:
+  enabled: true
+  ca_type: "step-ca"
+  root_ca_lifetime: "10y"
+  intermediate_ca_lifetime: "1y"
+  certificate_lifetime: "90d"
+  
+  # Automatic certificate management
+  acme_enabled: true
+  auto_renewal: true
+  renewal_threshold: "30d"
+
+# Network monitoring configuration
+network_monitoring:
+  flow_monitoring: true
+  bandwidth_monitoring: true
+  device_discovery: true
+  vulnerability_scanning: false
+  
+  # Monitoring tools
+  tools:
+    ntopng: true
+    nagios: false
+    zabbix: false
+    observium: false
+  
+  # Alerting
+  alerting:
+    bandwidth_threshold: "90%"
+    connection_threshold: 1000
+    suspicious_activity: true
+
+# Security Information and Event Management
+siem_config:
+  enabled: false  # Optional - resource intensive
+  retention: "90d"
+  log_sources:
+    - "firewall"
+    - "ids"
+    - "dns"
+    - "vpn"
+    - "system"
+  
+  correlation_rules:
+    brute_force_detection: true
+    port_scanning_detection: true
+    malware_communication: true
+    data_exfiltration: true
+
+# Web Application Firewall
+waf_config:
+  enabled: false  # Optional component
+  engine: "modsecurity"
+  rule_sets:
+    owasp_core: true
+    comodo: false
+    custom: true
+  
+  protection:
+    sql_injection: true
+    xss_protection: true
+    csrf_protection: true
+    ddos_protection: true
+
+# Network Access Control
+nac_config:
+  enabled: false  # Optional component
+  authentication_methods:
+    - "802.1x"
+    - "mac_address"
+    - "web_portal"
+  
+  device_profiling: true
+  guest_network: true
+  quarantine_vlan: true
+
+# Backup and disaster recovery
+backup_config:
+  configuration_backup:
+    schedule: "0 3 * * *"  # Daily at 3 AM
+    retention: "30d"
+    encryption: true
+  
+  log_backup:
+    schedule: "0 1 * * *"  # Daily at 1 AM
+    retention: "90d"
+    compression: true
+  
+  disaster_recovery:
+    config_sync: false
+    automated_failover: false
+
+# Integration with existing proxmox-firewall
+proxmox_firewall_integration:
+  enabled: true
+  config_path: "../proxmox-firewall"
+  use_existing_roles: true
+  
+  # Specific integrations
+  integrations:
+    terraform_api: true
+    ansible_roles: true
+    device_templates: true
+    multi_site: false
+
+# Compliance and auditing
+compliance_config:
+  logging_standards: "syslog_rfc3164"
+  audit_logging: true
+  configuration_versioning: true
+  
+  # Compliance frameworks
+  frameworks:
+    pci_dss: false
+    hipaa: false
+    gdpr: true
+    iso27001: false
+
+# Performance tuning
+performance_config:
+  connection_tracking: true
+  hardware_acceleration: false
+  multi_threading: true
+  
+  # Resource allocation
+  resource_allocation:
+    firewall_memory: "4GB"
+    ids_memory: "4GB"
+    monitoring_memory: "2GB"
+
+# Cloud-init configuration
+cloud_init:
+  user: "security"
+  password: "{{ vault_security_password }}"
+  ssh_keys:
+    - "{{ vault_ssh_public_key }}"
+  timezone: "UTC"
+  packages:
+    - curl
+    - wget
+    - htop
+    - nano
+    - tcpdump
+    - nmap
+
+# Integration with other vendors
+vendor_integrations:
+  k3s_cluster: true    # Protect K3S cluster
+  nas_storage: true    # Protect NAS storage
+  development: true    # Protect development environment
+  
+  # Cross-vendor security policies
+  cross_vendor_policies:
+    inter_vlan_routing: true
+    shared_certificate_authority: true
+    centralized_logging: true

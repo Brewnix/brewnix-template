@@ -1,0 +1,273 @@
+# Development Server Service Definitions
+# Services for development workstations and tools
+# Focused on development environments, IDEs, and development tools
+
+code_server:
+  enabled: false
+  type: container
+  vmid: 300
+  template: ubuntu-22.04
+  resources:
+    cpu: 4
+    memory: 8192
+    storage: 100
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "8443:8443"
+  volumes:
+    - "/dev-data/workspace:/home/coder/workspace"
+    - "/dev-data/config:/home/coder/.config"
+  environment:
+    PASSWORD: "secure_password"
+  monitoring:
+    enabled: true
+    port: 8443
+  backup:
+    enabled: true
+    data_backup_enabled: true
+    data_paths:
+      - "/dev-data/workspace"
+      - "/dev-data/config"
+
+jupyter_lab:
+  enabled: false
+  type: container
+  vmid: 301
+  template: ubuntu-22.04
+  resources:
+    cpu: 6
+    memory: 16384
+    storage: 80
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "8888:8888"
+  volumes:
+    - "/dev-data/jupyter:/home/jovyan/work"
+  gpu_passthrough: true  # For ML/AI workloads
+  environment:
+    JUPYTER_TOKEN: "secure_token"
+  monitoring:
+    enabled: true
+    port: 8888
+  backup:
+    enabled: true
+    data_backup_enabled: true
+    data_paths:
+      - "/dev-data/jupyter"
+
+development_desktop:
+  enabled: false
+  type: vm
+  vmid: 302
+  template: ubuntu-desktop-22.04
+  resources:
+    cpu: 8
+    memory: 32768
+    storage: 200
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  display:
+    vnc_enabled: true
+    spice_enabled: true
+    gpu_passthrough: true
+  usb_passthrough:
+    - "host=1d6b:0003"  # USB 3.0 hub
+  storage:
+    additional_disks:
+      - size: 500
+        type: ssd
+        mount: /home/dev/projects
+  monitoring:
+    enabled: true
+    port: 5900  # VNC port
+  backup:
+    enabled: true
+    schedule:
+      hour: 3
+      minute: 0
+    retention_days: 7
+
+docker_registry:
+  enabled: false
+  type: container
+  vmid: 303
+  template: ubuntu-22.04
+  resources:
+    cpu: 2
+    memory: 2048
+    storage: 100
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "5000:5000"
+  volumes:
+    - "/dev-data/docker-registry:/var/lib/registry"
+  ssl:
+    enabled: true
+    cert_path: "/etc/ssl/certs/registry.crt"
+    key_path: "/etc/ssl/private/registry.key"
+  monitoring:
+    enabled: true
+    port: 5000
+  backup:
+    enabled: true
+    data_backup_enabled: true
+    data_paths:
+      - "/dev-data/docker-registry"
+
+gitlab:
+  enabled: false
+  type: vm
+  vmid: 304
+  template: ubuntu-22.04-cloud
+  resources:
+    cpu: 4
+    memory: 8192
+    storage: 200
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "80:80"
+    - "443:443"
+    - "22:22"
+  storage:
+    gitlab_data: 500  # GB for repositories and artifacts
+  ssl:
+    enabled: true
+    letsencrypt: true
+  monitoring:
+    enabled: true
+    port: 9236
+  backup:
+    enabled: true
+    schedule:
+      hour: 2
+      minute: 30
+    retention_days: 30
+    gitlab_backup: true
+
+database_server:
+  enabled: false
+  type: container
+  vmid: 305
+  template: ubuntu-22.04
+  resources:
+    cpu: 4
+    memory: 8192
+    storage: 100
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "5432:5432"  # PostgreSQL
+    - "3306:3306"  # MySQL
+    - "6379:6379"  # Redis
+    - "27017:27017"  # MongoDB
+  volumes:
+    - "/dev-data/postgres:/var/lib/postgresql/data"
+    - "/dev-data/mysql:/var/lib/mysql"
+    - "/dev-data/redis:/data"
+    - "/dev-data/mongodb:/data/db"
+  monitoring:
+    enabled: true
+    port: 9187  # PostgreSQL exporter
+  backup:
+    enabled: true
+    data_backup_enabled: true
+    data_paths:
+      - "/dev-data/postgres"
+      - "/dev-data/mysql"
+      - "/dev-data/redis"
+      - "/dev-data/mongodb"
+    database_dump: true
+
+portainer:
+  enabled: false
+  type: container
+  vmid: 306
+  template: ubuntu-22.04
+  resources:
+    cpu: 1
+    memory: 1024
+    storage: 20
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "9000:9000"
+  volumes:
+    - "/var/run/docker.sock:/var/run/docker.sock"
+    - "/dev-data/portainer:/data"
+  monitoring:
+    enabled: true
+    port: 9000
+  backup:
+    enabled: true
+    data_backup_enabled: true
+    data_paths:
+      - "/dev-data/portainer"
+
+minio:
+  enabled: false
+  type: container
+  vmid: 307
+  template: ubuntu-22.04
+  resources:
+    cpu: 2
+    memory: 2048
+    storage: 50
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "9001:9001"  # Console
+    - "9000:9000"  # API
+  volumes:
+    - "/dev-data/minio:/data"
+  storage:
+    object_storage: 1000  # GB for object storage
+  environment:
+    MINIO_ROOT_USER: "admin"
+    MINIO_ROOT_PASSWORD: "secure_password"
+  monitoring:
+    enabled: true
+    port: 9000
+  backup:
+    enabled: true
+    data_backup_enabled: true
+    data_paths:
+      - "/dev-data/minio"
+
+jenkins:
+  enabled: false
+  type: container
+  vmid: 308
+  template: ubuntu-22.04
+  resources:
+    cpu: 4
+    memory: 4096
+    storage: 100
+  network:
+    ip: dhcp
+    bridge: vmbr0
+  ports:
+    - "8080:8080"
+    - "50000:50000"
+  volumes:
+    - "/dev-data/jenkins:/var/jenkins_home"
+    - "/var/run/docker.sock:/var/run/docker.sock"
+  monitoring:
+    enabled: true
+    port: 8080
+  backup:
+    enabled: true
+    data_backup_enabled: true
+    data_paths:
+      - "/dev-data/jenkins"

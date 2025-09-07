@@ -1,0 +1,133 @@
+---
+# Universal Service Deployment Task
+# Deploys any service based on its configuration
+
+- name: Set service configuration
+  ansible.builtin.set_fact:
+    current_service: "{{ available_services[service_name] }}"
+    service_config: "{{ vars[service_name] | default({}) }}"
+
+- name: Deploy VM service
+  community.general.proxmox_kvm:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user | default('root@pam') }}"
+    api_password: "{{ proxmox_api_password }}"
+    name: "{{ service_name }}"
+    node: "{{ inventory_hostname }}"
+    vmid: "{{ service_config.vm_id | default(current_service.vmid) }}"
+    state: present
+    cores: "{{ service_config.cores | default(current_service.cores) }}"
+    memory: "{{ service_config.memory | default(current_service.memory) }}"
+    balloon: "{{ service_config.balloon | default(current_service.balloon | default(512)) }}"
+    scsihw: virtio-scsi-pci
+    net: net0=virtio,bridge=vmbr0,firewall=1
+    ostype: "{{ current_service.ostype }}"
+    boot: order=scsi0;ide2;net0
+    onboot: true
+    protection: false
+    cpu: host
+    vga: serial0
+    serial: socket
+    tags: "{{ current_service.tags }}"
+    scsi: |
+      {% if current_service.storage_passthrough | default(false) %}
+      {% for disk in storage.data_disks | default([]) %}
+      scsi{{ loop.index }}={{ disk }},serial={{ disk | basename }}
+      {% endfor %}
+      {% else %}
+      scsi0=local-zfs:{{ service_config.disk_size | default(current_service.disk_size) }},cache=writeback,iothread=1
+      {% if current_service.backup_disk_size is defined %}
+      scsi1=local-zfs:{{ service_config.backup_disk_size | default(current_service.backup_disk_size) }},cache=writeback,iothread=1
+      {% endif %}
+      {% endif %}
+  when: current_service.type == 'vm'
+
+- name: Deploy container service
+  community.general.proxmox_lxc:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user | default('root@pam') }}"
+    api_password: "{{ proxmox_api_password }}"
+    node: "{{ inventory_hostname }}"
+    vmid: "{{ service_config.container_id | default(current_service.vmid) }}"
+    hostname: "{{ service_name }}"
+    state: present
+    ostemplate: "{{ current_service.ostemplate }}"
+    storage: local-zfs
+    memory: "{{ service_config.memory | default(current_service.memory) }}"
+    swap: "{{ service_config.swap | default(current_service.swap) }}"
+    cores: "{{ service_config.cores | default(current_service.cores) }}"
+    disk: "{{ service_config.disk_size | default(current_service.disk_size) }}"
+    netif: net0=name=eth0,bridge=vmbr0,ip=dhcp,firewall=1
+    features: "{{ current_service.features }}"
+    onboot: true
+    startup: order=5,up=30
+    tags: "{{ current_service.tags }}"
+    unprivileged: true
+    mounts: |
+      {% if current_service.data_mount is defined %}
+      mp0={{ current_service.data_mount.source }},mp={{ current_service.data_mount.target }},backup=1
+      {% endif %}
+      {% if current_service.media_mount is defined %}
+      mp1={{ current_service.media_mount.source }},mp={{ current_service.media_mount.target }},backup=0
+      {% endif %}
+  when: current_service.type == 'container'
+
+- name: Start service
+  community.general.proxmox_kvm:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user | default('root@pam') }}"
+    api_password: "{{ proxmox_api_password }}"
+    name: "{{ service_name }}"
+    node: "{{ inventory_hostname }}"
+    state: started
+  when: current_service.type == 'vm'
+
+- name: Start container service
+  community.general.proxmox_lxc:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user | default('root@pam') }}"
+    api_password: "{{ proxmox_api_password }}"
+    hostname: "{{ service_name }}"
+    node: "{{ inventory_hostname }}"
+    state: started
+  when: current_service.type == 'container'
+
+- name: Create service snapshot
+  community.general.proxmox_snap:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user | default('root@pam') }}"
+    api_password: "{{ proxmox_api_password }}"
+    vmid: "{{ service_config.vm_id | default(service_config.container_id | default(current_service.vmid)) }}"
+    snapname: "initial-{{ ansible_date_time.epoch }}"
+    description: "Initial {{ service_name }} deployment - {{ ansible_date_time.iso8601 }}"
+    state: present
+  when: service_config.create_snapshot | default(true)
+
+- name: Wait for service to be ready
+  ansible.builtin.wait_for:
+    host: "{{ service_name }}.{{ site_name }}.local"
+    port: "{{ current_service.validation.port }}"
+    timeout: 300
+    delay: 30
+  when: 
+    - current_service.validation is defined
+    - service_config.wait_for_ready | default(true)
+
+- name: Validate service deployment
+  ansible.builtin.uri:
+    url: "http://{{ service_name }}.{{ site_name }}.local:{{ current_service.validation.port }}/{{ current_service.validation.path }}"
+    method: GET
+    status_code: "{{ current_service.validation.expected_status }}"
+    timeout: 10
+  when: current_service.validation is defined
+  ignore_errors: true
+  register: service_validation_result
+
+- name: Log service deployment result
+  ansible.builtin.debug:
+    msg: |
+      Service {{ service_name }} deployment: {{ 'SUCCESS' if service_validation_result.status | default(0) == current_service.validation.expected_status else 'FAILED' }}
+      Type: {{ current_service.type }}
+      VMID: {{ service_config.vm_id | default(service_config.container_id | default(current_service.vmid)) }}
+      Description: {{ current_service.description }}
+  when: current_service.validation is defined

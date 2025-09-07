@@ -1,0 +1,140 @@
+---
+# Development Environment Configuration Tasks
+
+- name: Install development packages
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - wget
+      - build-essential
+      - software-properties-common
+      - apt-transport-https
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - python3
+      - python3-pip
+      - nodejs
+      - npm
+      - docker.io
+      - docker-compose
+    state: present
+    update_cache: true
+
+- name: Create development workspace directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  loop:
+    - "{{ dev_environment_config.workspace_path }}"
+    - "{{ dev_environment_config.workspace_path }}/projects"
+    - "{{ dev_environment_config.workspace_path }}/tools"
+    - "{{ dev_environment_config.workspace_path }}/data"
+    - "/opt/development/config"
+
+- name: Create developer user
+  ansible.builtin.user:
+    name: developer
+    comment: "Development Environment User"
+    shell: /bin/bash
+    home: "{{ dev_environment_config.user_workspace }}"
+    create_home: true
+    groups: docker,sudo
+    append: true
+
+- name: Set up developer user workspace
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: developer
+    group: developer
+  loop:
+    - "{{ dev_environment_config.user_workspace }}/projects"
+    - "{{ dev_environment_config.user_workspace }}/tools"
+    - "{{ dev_environment_config.user_workspace }}/.config"
+
+- name: Configure Git global settings for developer user
+  community.general.git_config:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    scope: global
+  loop:
+    - { name: "user.name", value: "Developer" }
+    - { name: "user.email", value: "developer@localhost" }
+    - { name: "init.defaultBranch", value: "main" }
+    - { name: "pull.rebase", value: "false" }
+  become: true
+  become_user: developer
+
+- name: Install Python development packages
+  ansible.builtin.pip:
+    name:
+      - virtualenv
+      - pipenv
+      - poetry
+      - jupyter
+      - notebook
+      - jupyterlab
+      - black
+      - flake8
+      - pytest
+    state: present
+
+- name: Install Node.js development packages globally
+  community.general.npm:
+    name: "{{ item }}"
+    global: true
+    state: present
+  loop:
+    - yarn
+    - typescript
+    - "@vue/cli"
+    - "@angular/cli"
+    - create-react-app
+    - eslint
+    - prettier
+
+- name: Configure Docker for development
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Add developer user to docker group
+  ansible.builtin.user:
+    name: developer
+    groups: docker
+    append: true
+
+- name: Create development environment configuration
+  ansible.builtin.template:
+    src: dev-environment.conf.j2
+    dest: /opt/development/config/environment.conf
+    mode: '0644'
+    owner: root
+    group: root
+
+- name: Set up SSL certificates directory
+  ansible.builtin.file:
+    path: /opt/development/ssl
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Display development environment configuration
+  ansible.builtin.debug:
+    msg: |
+      Development Environment Configuration:
+      - Workspace Path: {{ dev_environment_config.workspace_path }}
+      - User Workspace: {{ dev_environment_config.user_workspace }}
+      - Default Ports: {{ dev_environment_config.default_ports }}
+      - Developer User Created: Yes
+      - Docker Enabled: Yes
+      - Python Tools: Installed
+      - Node.js Tools: Installed

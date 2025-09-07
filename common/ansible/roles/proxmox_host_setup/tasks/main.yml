@@ -1,0 +1,112 @@
+---
+# Proxmox Host Setup Tasks
+# Configure Proxmox host for NAS operations with community repositories
+
+- name: Configure Proxmox repositories (community)
+  ansible.builtin.template:
+    src: sources.list.j2
+    dest: /etc/apt/sources.list.d/pve-community.list
+    backup: true
+  vars:
+    pve_repository_type: "community"
+  notify: update package cache
+
+- name: Remove enterprise repositories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/pve-enterprise.list
+    - /etc/apt/sources.list.d/ceph.list
+  notify: update package cache
+
+- name: Update package cache
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name:
+      - zfsutils-linux
+      - zfs-dkms
+      - qemu-guest-agent
+      - smartmontools
+      - hdparm
+      - lm-sensors
+      - proxmox-backup-client
+      - pve-qemu-kvm
+      - qemu-server
+      - pve-container
+    state: present
+
+- name: Configure ZFS module loading
+  ansible.builtin.copy:
+    content: |
+      zfs
+      zfs_dkms
+    dest: /etc/modules-load.d/zfs.conf
+    mode: '0644'
+    owner: root
+    group: root
+
+- name: Load ZFS modules
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - zfs
+
+- name: Configure Proxmox storage for ZFS
+  community.general.proxmox_storage:
+    api_host: "{{ proxmox_api_host | default('localhost') }}"
+    api_user: "{{ proxmox_api_user | default('root@pam') }}"
+    api_password: "{{ proxmox_api_password }}"
+    name: "{{ item.name }}"
+    type: "{{ item.type }}"
+    content: "{{ item.content }}"
+    nodes: "{{ item.nodes | default([inventory_hostname]) }}"
+    state: present
+  loop:
+    - name: local-zfs
+      type: zfspool
+      content: "{{ storage_content | default('images,rootdir,iso,vztmpl,backup,snippets') }}"
+      nodes: "{{ [inventory_hostname] }}"
+  when: proxmox_api_password is defined
+
+- name: Configure network interfaces
+  ansible.builtin.template:
+    src: interfaces.j2
+    dest: /etc/network/interfaces
+    mode: '0644'
+    owner: root
+    group: root
+  notify: restart networking
+
+- name: Enable and start required services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - pveproxy
+    - pvedaemon
+    - pve-cluster
+    - corosync
+    - qemu-server
+    - pve-container
+
+- name: Suppress Proxmox subscription nag screen
+  ansible.builtin.include_tasks: suppress_nag.yml
+  when: suppress_subscription_nag | default(true)
+  tags:
+    - nag_suppression
+    - proxmox_config
+
+- name: Configure backup schedules
+  ansible.builtin.cron:
+    name: "ZFS snapshot backup"
+    minute: "0"
+    hour: "2"
+    job: "/usr/local/bin/zfs-backup.sh"
+    state: present
+    user: root

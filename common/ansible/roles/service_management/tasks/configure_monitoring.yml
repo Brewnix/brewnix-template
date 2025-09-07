@@ -1,0 +1,75 @@
+---
+# Service Management - Monitoring Configuration Tasks
+# Configure monitoring for deployed services
+
+- name: Configure Prometheus monitoring for service
+  ansible.builtin.template:
+    src: prometheus_target.yml.j2
+    dest: "/etc/prometheus/targets/{{ service.name }}.yml"
+    mode: '0644'
+    owner: root
+    group: root
+  vars:
+    service_name: "{{ service.name }}"
+    service_ip: "{{ service.network.ip | default('') }}"
+    service_port: "{{ service.monitoring.port | default('9100') }}"
+    service_metrics_path: "{{ service.monitoring.metrics_path | default('/metrics') }}"
+  when: 
+    - service.monitoring is defined
+    - service.monitoring.enabled | default(false)
+  notify: Restart prometheus
+
+- name: Configure service health checks
+  ansible.builtin.cron:
+    name: "Health check for {{ service.name }}"
+    minute: "*/5"
+    job: "/usr/local/bin/service-healthcheck.sh {{ service.name }} {{ service.network.ip | default('localhost') }} {{ service.health_check.port | default('80') }}"
+    state: "{{ 'present' if (service.health_check.enabled | default(false)) else 'absent' }}"
+    user: root
+  when: service.health_check is defined
+
+- name: Configure log collection for service
+  ansible.builtin.template:
+    src: rsyslog_service.conf.j2
+    dest: "/etc/rsyslog.d/50-{{ service.name }}.conf"
+    mode: '0644'
+    owner: root
+    group: root
+  vars:
+    service_name: "{{ service.name }}"
+    log_level: "{{ service.logging.level | default('info') }}"
+    log_facility: "{{ service.logging.facility | default('local0') }}"
+  when: 
+    - service.logging is defined
+    - service.logging.enabled | default(false)
+  notify: Restart rsyslog
+
+- name: Configure service alerts
+  ansible.builtin.template:
+    src: alertmanager_rules.yml.j2
+    dest: "/etc/prometheus/rules/{{ service.name }}.yml"
+    mode: '0644'
+    owner: root
+    group: root
+  vars:
+    service_name: "{{ service.name }}"
+    alert_rules: "{{ service.alerts | default([]) }}"
+  when: 
+    - service.alerts is defined
+    - service.alerts | length > 0
+  notify: Reload prometheus
+
+- name: Create monitoring dashboard for service
+  ansible.builtin.template:
+    src: grafana_dashboard.json.j2
+    dest: "/var/lib/grafana/dashboards/{{ service.name }}.json"
+    mode: '0644'
+    owner: grafana
+    group: grafana
+  vars:
+    service_name: "{{ service.name }}"
+    dashboard_config: "{{ service.dashboard | default({}) }}"
+  when: 
+    - service.dashboard is defined
+    - grafana_enabled | default(false)
+  notify: Restart grafana

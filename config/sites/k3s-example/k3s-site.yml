@@ -1,0 +1,174 @@
+---
+# K3S Cluster Site Configuration Example
+# Multi-node Kubernetes cluster deployment
+
+# Site identification
+site_name: "k3s-cluster-example"
+site_type: "k3s-cluster"
+deployment_environment: "production"
+
+# Network configuration
+network:
+  vlan_id: 100
+  ip_range: "192.168.100.0/24"
+  management_ip: "192.168.100.10"
+  gateway: "192.168.100.1"
+  dns_servers: "192.168.100.1,8.8.8.8"
+  search_domain: "k3s.local"
+  load_balancer_range: "192.168.100.200-192.168.100.210"
+
+# Proxmox configuration
+proxmox_api_host: "{{ network.management_ip }}"
+proxmox_api_user: "root@pam"
+proxmox_api_password: "{{ vault_proxmox_password }}"
+proxmox_node: "pve1"
+proxmox_storage_pool: "local-lvm"
+proxmox_iso_storage: "local"
+
+# K3S cluster configuration
+k3s_cluster_config:
+  cluster_cidr: "10.244.0.0/16"
+  service_cidr: "10.96.0.0/12"
+  cluster_dns: "10.96.0.10"
+  network_plugin: "flannel"
+  token: "{{ vault_k3s_token }}"
+
+# Cluster node configuration
+cluster_nodes:
+  master_count: 3
+  worker_count: 5
+  auto_provision: true
+
+# Master node configuration
+k3s_master:
+  count: 3
+  vm_config:
+    vcpus: 4
+    memory: 8192
+    disk: 100
+  network:
+    ip_start: "192.168.100.11"  # Masters: .11, .12, .13
+  high_availability: true
+
+# Worker node configuration  
+k3s_worker:
+  count: 5
+  vm_config:
+    vcpus: 4
+    memory: 8192
+    disk: 100
+  network:
+    ip_start: "192.168.100.21"  # Workers: .21, .22, .23, .24, .25
+
+# Storage configuration
+storage_config:
+  longhorn:
+    enabled: true
+    default_replicas: 3
+    storage_over_provisioning: 200
+    backup_target: "nfs://192.168.100.50/longhorn-backups"
+  
+  local_storage:
+    enabled: true
+    path: "/var/lib/rancher/k3s/storage"
+    
+  csi_drivers:
+    proxmox_csi: true
+    longhorn_csi: true
+
+# Service integrations
+service_integrations:
+  monitoring:
+    prometheus: true
+    grafana: true
+    alertmanager: true
+    
+  logging:
+    loki: true
+    promtail: true
+    
+  ingress:
+    nginx: true
+    cert_manager: true
+    external_dns: false
+    
+  registry:
+    harbor: true
+    harbor_ip: "192.168.100.81"
+    
+  backup:
+    velero: true
+    backup_schedule: "0 2 * * *"
+
+# Security configuration
+security_config:
+  network_policies: true
+  pod_security_standards: "restricted"
+  admission_controllers:
+    - "NamespaceLifecycle"
+    - "LimitRanger"
+    - "ServiceAccount"
+    - "PersistentVolumeLabel"
+    - "DefaultStorageClass"
+    - "ResourceQuota"
+    - "DefaultTolerationSeconds"
+    - "NodeRestriction"
+  
+  rbac:
+    enabled: true
+    create_cluster_roles: true
+    
+  secrets_encryption: true
+  audit_logging: true
+
+# Cloud-init configuration
+cloud_init:
+  user: "k3s"
+  password: "{{ vault_k3s_user_password }}"
+  ssh_keys:
+    - "{{ vault_ssh_public_key }}"
+  timezone: "UTC"
+  packages:
+    - curl
+    - wget
+    - htop
+    - nano
+    - git
+
+# Backup configuration
+backup_config:
+  etcd:
+    enabled: true
+    schedule: "0 */6 * * *"
+    retention: "72h"
+    
+  persistent_volumes:
+    enabled: true
+    schedule: "0 1 * * *"
+    retention: "7d"
+
+# Monitoring and alerting
+monitoring_config:
+  metrics_retention: "15d"
+  log_retention: "30d"
+  alert_rules:
+    - cluster_health
+    - node_resources
+    - pod_failures
+    - storage_usage
+    
+  notification_channels:
+    slack: "{{ vault_slack_webhook }}"
+    email: "admin@example.com"
+
+# Development and testing
+dev_config:
+  enable_local_registry: true
+  enable_debug_tools: true
+  allow_privileged_containers: false
+  
+# Maintenance windows
+maintenance:
+  update_schedule: "0 3 * * 0"  # Sunday 3 AM
+  reboot_strategy: "rolling"
+  max_unavailable: "25%"
