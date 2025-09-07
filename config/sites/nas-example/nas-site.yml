@@ -1,0 +1,317 @@
+---
+# NAS Storage Site Configuration Example
+# Complete network-attached storage deployment
+
+# Site identification
+site_name: "nas-storage-example"
+site_type: "proxmox-nas"
+deployment_environment: "production"
+
+# Storage configuration summary
+storage:
+  type: "nas"
+  zfs_pools: "{{ nas_zfs_pools }}"
+  data_disks: "{{ hardware_config.data_disks }}"
+
+# Network configuration
+network:
+  vlan_id: 50
+  ip_range: "192.168.50.0/24"
+  management_ip: "192.168.50.10"
+  gateway: "192.168.50.1"
+  dns_servers: "192.168.50.1,8.8.8.8"
+  search_domain: "nas.local"
+
+# Proxmox configuration
+proxmox_api_host: "{{ network.management_ip }}"
+proxmox_api_user: "root@pam"
+proxmox_api_password: "{{ vault_proxmox_password }}"
+proxmox_node: "pve1"
+proxmox_storage_pool: "local-lvm"
+proxmox_iso_storage: "local"
+
+# ZFS Storage Configuration
+nas_zfs_pools:
+  - name: "tank"
+    devices:
+      - "/dev/sdb"
+      - "/dev/sdc"
+      - "/dev/sdd"
+      - "/dev/sde"
+    raid_level: "raidz1"
+    compression: "lz4"
+    atime: "off"
+    recordsize: "128K"
+    mountpoint: "/tank"
+    hot_spares:
+      - "/dev/sdf"
+
+  - name: "fast"
+    devices:
+      - "/dev/nvme0n1"
+      - "/dev/nvme0n2"
+    raid_level: "mirror"
+    compression: "lz4"
+    atime: "off"
+    recordsize: "64K"
+    mountpoint: "/fast"
+
+# SLOG and L2ARC devices for performance
+nas_slog_devices:
+  - pool: "tank"
+    devices:
+      - "/dev/nvme1n1p1"
+
+nas_l2arc_devices:
+  - pool: "tank"
+    devices:
+      - "/dev/nvme1n1p2"
+
+# NAS Datasets
+nas_datasets:
+  - pool: "tank"
+    name: "nas-data"
+    mountpoint: "/nas-data"
+    compression: "lz4"
+    recordsize: "1M"
+    quota: "500G"
+
+  - pool: "tank"
+    name: "media"
+    mountpoint: "/nas-data/media"
+    compression: "lz4"
+    recordsize: "1M"
+    quota: "2T"
+
+  - pool: "tank"
+    name: "documents"
+    mountpoint: "/nas-data/documents"
+    compression: "gzip"
+    recordsize: "128K"
+    quota: "100G"
+
+  - pool: "tank"
+    name: "backups"
+    mountpoint: "/nas-data/backups"
+    compression: "gzip-9"
+    recordsize: "1M"
+    quota: "1T"
+
+  - pool: "tank"
+    name: "nextcloud"
+    mountpoint: "/nas-data/nextcloud"
+    compression: "lz4"
+    recordsize: "128K"
+    quota: "200G"
+
+  - pool: "fast"
+    name: "vm-storage"
+    mountpoint: "/fast/vm-storage"
+    compression: "lz4"
+    recordsize: "64K"
+    quota: "300G"
+
+  - pool: "fast"
+    name: "databases"
+    mountpoint: "/fast/databases"
+    compression: "lz4"
+    recordsize: "8K"
+    quota: "100G"
+
+# NFS Exports
+nfs_exports:
+  - path: "/nas-data"
+    clients: "192.168.50.0/24"
+    options: "rw,sync,no_subtree_check,no_root_squash"
+
+  - path: "/nas-data/media"
+    clients: "192.168.50.0/24"
+    options: "rw,sync,no_subtree_check,all_squash,anonuid=65534,anongid=65534"
+
+  - path: "/fast/vm-storage"
+    clients: "192.168.50.10"
+    options: "rw,sync,no_subtree_check,no_root_squash"
+
+# Samba Configuration
+samba_workgroup: "HOMELAB"
+samba_shares:
+  - name: "nas-data"
+    path: "/nas-data"
+    comment: "Main NAS Data Share"
+    browseable: true
+    writable: true
+    guest_ok: false
+    valid_users: "@users"
+    create_mask: "0664"
+    directory_mask: "0775"
+
+  - name: "media"
+    path: "/nas-data/media"
+    comment: "Media Library"
+    browseable: true
+    writable: true
+    guest_ok: true
+    create_mask: "0664"
+    directory_mask: "0775"
+    recycle: true
+
+  - name: "documents"
+    path: "/nas-data/documents"
+    comment: "Document Storage"
+    browseable: true
+    writable: true
+    guest_ok: false
+    valid_users: "@users"
+    create_mask: "0664"
+    directory_mask: "0775"
+    recycle: true
+
+  - name: "backups"
+    path: "/nas-data/backups"
+    comment: "Backup Storage"
+    browseable: false
+    writable: true
+    guest_ok: false
+    valid_users: "backup"
+    create_mask: "0600"
+    directory_mask: "0700"
+
+# Storage monitoring and maintenance
+storage_monitoring:
+  smart_enabled: true
+  smart_schedule: "0 2 * * *"
+  scrub_schedule: "0 2 * * 0"  # Weekly on Sunday
+  
+  # Snapshot configuration
+  snapshots:
+    hourly:
+      enabled: true
+      retention: 24
+    daily:
+      enabled: true
+      retention: 7
+    weekly:
+      enabled: true
+      retention: 4
+    monthly:
+      enabled: true
+      retention: 12
+
+# Performance tuning
+performance_config:
+  zfs_arc_max: "8G"  # Maximum ARC size
+  zfs_arc_min: "2G"  # Minimum ARC size
+  vm_swappiness: 1
+  vm_vfs_cache_pressure: 50
+  
+  # Network tuning
+  tcp_window_scaling: true
+  tcp_rmem: "4096 87380 16777216"
+  tcp_wmem: "4096 65536 16777216"
+
+# Security configuration
+security_config:
+  ufw_enabled: true
+  fail2ban_enabled: true
+  
+  # Allowed services
+  allowed_services:
+    - ssh
+    - nfs
+    - samba
+    - http
+    - https
+  
+  # SSH hardening
+  ssh_config:
+    password_auth: false
+    root_login: false
+    port: 22
+
+# Backup configuration
+backup_config:
+  config_backup:
+    enabled: true
+    schedule: "0 3 * * *"
+    retention: "30d"
+    destination: "/nas-data/backups/config"
+  
+  zfs_backup:
+    enabled: true
+    schedule: "0 1 * * *"
+    retention: "7d"
+    destination: "/nas-data/backups/zfs"
+
+# User management
+user_config:
+  nas_users:
+    - username: "nasuser"
+      password: "{{ vault_nas_user_password }}"
+      groups: ["users", "sambashare"]
+      shell: "/bin/bash"
+      home: "/home/nasuser"
+
+    - username: "backup"
+      password: "{{ vault_backup_user_password }}"
+      groups: ["backup"]
+      shell: "/bin/bash"
+      home: "/home/backup"
+
+# Service integrations
+service_integrations:
+  plex_media_server: false
+  jellyfin_media_server: true
+  nextcloud: true
+  
+  # Monitoring
+  prometheus: false
+  grafana: false
+  uptime_kuma: false
+
+# Cloud-init configuration
+cloud_init:
+  user: "nas"
+  password: "{{ vault_nas_password }}"
+  ssh_keys:
+    - "{{ vault_ssh_public_key }}"
+  timezone: "UTC"
+  packages:
+    - curl
+    - wget
+    - htop
+    - iotop
+    - ncdu
+    - rsync
+
+# Hardware configuration
+hardware_config:
+  cpu_cores: 8
+  memory_gb: 32
+  
+  # Disk configuration
+  system_disks:
+    - "/dev/sda"  # Boot drive
+  
+  data_disks:
+    - "/dev/sdb"  # 4TB
+    - "/dev/sdc"  # 4TB
+    - "/dev/sdd"  # 4TB
+    - "/dev/sde"  # 4TB
+  
+  ssd_cache:
+    - "/dev/nvme0n1"  # 1TB NVMe
+    - "/dev/nvme0n2"  # 1TB NVMe
+  
+  hot_spares:
+    - "/dev/sdf"  # 4TB spare
+
+# Integration with other vendors
+vendor_integrations:
+  k3s_cluster: true     # Provide storage for K3S
+  development: true     # Provide storage for dev environment
+  security_firewall: true  # Protected by firewall
+  
+  # Cross-vendor services
+  shared_storage: true
+  backup_target: true
+  media_streaming: true

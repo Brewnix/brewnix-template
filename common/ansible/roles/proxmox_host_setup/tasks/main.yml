@@ -56,21 +56,14 @@
   loop:
     - zfs
 
-- name: Configure Proxmox storage for ZFS
-  community.general.proxmox_storage:
-    api_host: "{{ proxmox_api_host | default('localhost') }}"
-    api_user: "{{ proxmox_api_user | default('root@pam') }}"
-    api_password: "{{ proxmox_api_password }}"
-    name: "{{ item.name }}"
-    type: "{{ item.type }}"
-    content: "{{ item.content }}"
-    nodes: "{{ item.nodes | default([inventory_hostname]) }}"
-    state: present
-  loop:
-    - name: local-zfs
-      type: zfspool
-      content: "{{ storage_content | default('images,rootdir,iso,vztmpl,backup,snippets') }}"
-      nodes: "{{ [inventory_hostname] }}"
+- name: Configure Proxmox storage for ZFS (using CLI)
+  ansible.builtin.shell: |
+    pvesm add zfspool local-zfs --pool rpool --content images,rootdir,iso,vztmpl,backup,snippets
+  register: storage_result
+  changed_when: "'already exists' not in storage_result.stderr"
+  failed_when:
+    - storage_result.rc != 0
+    - "'already exists' not in storage_result.stderr"
   when: proxmox_api_password is defined
 
 - name: Configure network interfaces
