@@ -1,0 +1,180 @@
+---
+# GitOps Site Configuration for Site1
+# Converted from site.conf for GitOps testing
+
+# Basic site information
+site_name: "site1"
+site_display_name: "Primary Home Network"
+network_prefix: "10.1"
+domain: "home.local"
+
+# Network configuration with sophisticated VLAN management
+network:
+  vlan_id: 50
+  management_ip: "10.1.50.1"
+
+# VLANs with sophisticated network management
+vlans:
+  - vlan_id: 10
+    name: "Main Network"
+    subnet: "10.1.10.0/24"
+    gateway: "10.1.10.1"
+  - vlan_id: 20
+    name: "Security Cameras"
+    subnet: "10.1.20.0/24"
+    gateway: "10.1.20.1"
+  - vlan_id: 30
+    name: "IoT Devices"
+    subnet: "10.1.30.0/24"
+    gateway: "10.1.30.1"
+  - vlan_id: 40
+    name: "Guest Network"
+    subnet: "10.1.40.0/24"
+    gateway: "10.1.40.1"
+  - vlan_id: 50
+    name: "Management"
+    subnet: "10.1.50.0/24"
+    gateway: "10.1.50.1"
+
+# Security zones mapping for firewall rules
+security_zones:
+  main: 10
+  cameras: 20
+  iot: 30
+  guest: 40
+  management: 50
+
+# Firewall configuration
+firewall_config:
+  vendor: "opnsense"
+  version: "23.7"
+  default_policy: "block"
+  firewall_rules:
+    iot_isolation:
+      action: "block"
+      source: "iot"
+      destination: "main"
+    guest_isolation:
+      action: "block"
+      source: "guest"
+      destination: "main,iot,cameras"
+    camera_access:
+      action: "allow"
+      source: "main"
+      destination: "cameras"
+      ports: "80,443,554"
+
+# IDS/IPS configuration
+ids_config:
+  engine: "suricata"
+  enabled: true
+  interfaces: ["wan", "lan"]
+  rules_source: "emerging-threats"
+
+# VPN configuration
+vpn_config:
+  enabled: true
+  type: "tailscale"
+  network: "100.64.0.0/10"
+
+# DNS Security
+dns_security:
+  enabled: true
+  primary_dns: "8.8.8.8"
+  secondary_dns: "8.8.4.4"
+  local_domain: "home.local"
+
+# Certificate Authority
+certificate_authority:
+  enabled: true
+  ca_name: "Home-CA"
+  cert_validity_days: 365
+
+# GitOps configuration
+gitops:
+  enabled: true
+  repository_url: "https://github.com/user/proxmox-firewall-config"
+  auto_deploy: true
+  drift_detection: true
+  sync_interval: "5m"
+
+# USB Bootstrap configuration
+usb_bootstrap:
+  enabled: true
+  auto_deploy: true
+  include_certificates: true
+  include_device_configs: true
+
+# Proxmox host configuration
+proxmox:
+  host: "10.1.50.1"
+  staging_host: "10.1.50.1"
+  production_host: "10.1.50.1"
+
+# Hardware configuration
+hardware:
+  cpu_model: "n100"
+  memory_gb: 16
+  storage_type: "ssd"
+  storage_size_gb: 256
+
+# Device configurations with MAC addresses
+devices:
+  home_assistant:
+    type: "homeassistant"
+    mac_address: "00:11:22:33:44:55"
+    ip_address: "10.1.10.10"
+    vlan_id: 10
+    ports: [8123]
+  nas:
+    type: "nas"
+    mac_address: "aa:bb:cc:dd:ee:ff"
+    ip_address: "10.1.10.20"
+    vlan_id: 10
+    ports: [80, 443, 445, 2049]
+  nvr:
+    type: "nvr"
+    mac_address: "11:22:33:44:55:66"
+    ip_address: "10.1.20.10"
+    vlan_id: 20
+    ports: [80, 443, 554]
+  omada_controller:
+    type: "wifi_access_point"
+    mac_address: "aa:bb:cc:dd:ee:ff"
+    ip_address: "10.1.50.10"
+    vlan_id: 50
+    ports: [80, 443, 8043, 8088]
+
+# Service configuration
+services:
+  omada_version: "5.9"
+  tailscale_enabled: true
+  suricata_enabled: true
+  zeek_enabled: false
+
+# Backup configuration
+backup:
+  retention_daily: 7
+  retention_weekly: 30
+  retention_monthly: 90
+  retention_yearly: 365
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  log_retention_days: 30
+  alert_email: "admin@home.local"
+
+# Security settings
+security:
+  ssh_password_auth: false
+  root_login_allowed: true
+  ids_enabled: true
+  ips_enabled: false
+
+# Update configuration
+updates:
+  auto_updates_enabled: true
+  window_start: "02:00"
+  window_end: "04:00"
+  update_days: ["mon", "wed", "fri"]
