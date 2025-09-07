@@ -1,0 +1,198 @@
+---
+# opnsense_firewall/tasks/main.yml
+# OPNsense firewall configuration and management
+
+- name: "OPNsense | Wait for OPNsense web interface to be available"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/core/firmware/status"
+    method: GET
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    validate_certs: false
+    timeout: 30
+  register: opnsense_status
+  retries: 10
+  delay: 30
+  until: opnsense_status.status == 200
+  tags:
+    - opnsense
+    - connectivity
+
+- name: "OPNsense | Get system information"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/core/system/status"
+    method: GET
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    validate_certs: false
+  register: opnsense_system_info
+  tags:
+    - opnsense
+    - system_info
+
+- name: "OPNsense | Configure system settings"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/core/system/set"
+    method: POST
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    body_format: json
+    body:
+      hostname: "{{ opnsense_hostname }}"
+      domain: "{{ opnsense_domain }}"
+      timezone: "{{ opnsense_timezone | default('UTC') }}"
+      language: "{{ opnsense_language | default('en_US') }}"
+    validate_certs: false
+  when: opnsense_hostname is defined
+  tags:
+    - opnsense
+    - system_config
+
+- name: "OPNsense | Configure network interfaces"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/interfaces/overview/set"
+    method: POST
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    body_format: json
+    body:
+      interface: "{{ item.interface }}"
+      descr: "{{ item.description | default('') }}"
+      enable: "{{ item.enabled | default(true) | string }}"
+      ipaddr: "{{ item.ip_address | default('dhcp') }}"
+      subnet: "{{ item.subnet | default('') }}"
+      gateway: "{{ item.gateway | default('') }}"
+    validate_certs: false
+  loop: "{{ opnsense_interfaces | default([]) }}"
+  tags:
+    - opnsense
+    - interfaces
+
+- name: "OPNsense | Configure firewall rules"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/firewall/filter/addRule"
+    method: POST
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    body_format: json
+    body:
+      sequence: "{{ item.sequence | default(1) }}"
+      action: "{{ item.action | default('pass') }}"
+      quick: "{{ item.quick | default(false) | string }}"
+      interface: "{{ item.interface }}"
+      direction: "{{ item.direction | default('in') }}"
+      ipprotocol: "{{ item.ip_protocol | default('inet') }}"
+      protocol: "{{ item.protocol | default('any') }}"
+      source_net: "{{ item.source | default('any') }}"
+      destination_net: "{{ item.destination | default('any') }}"
+      destination_port: "{{ item.port | default('') }}"
+      descr: "{{ item.description | default('') }}"
+      enabled: "{{ item.enabled | default(true) | string }}"
+    validate_certs: false
+  loop: "{{ opnsense_firewall_rules | default([]) }}"
+  register: firewall_rules_result
+  tags:
+    - opnsense
+    - firewall_rules
+
+- name: "OPNsense | Apply firewall rule changes"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/firewall/filter/apply"
+    method: POST
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    validate_certs: false
+  when: firewall_rules_result.changed
+  tags:
+    - opnsense
+    - firewall_apply
+
+- name: "OPNsense | Configure NAT rules"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/firewall/nat/addRule"
+    method: POST
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    body_format: json
+    body:
+      interface: "{{ item.interface }}"
+      protocol: "{{ item.protocol | default('tcp') }}"
+      source: "{{ item.source | default('any') }}"
+      destination: "{{ item.destination | default('any') }}"
+      destination_port: "{{ item.external_port }}"
+      target: "{{ item.target_ip }}"
+      local_port: "{{ item.internal_port }}"
+      descr: "{{ item.description | default('') }}"
+      enabled: "{{ item.enabled | default(true) | string }}"
+    validate_certs: false
+  loop: "{{ opnsense_nat_rules | default([]) }}"
+  register: nat_rules_result
+  tags:
+    - opnsense
+    - nat_rules
+
+- name: "OPNsense | Apply NAT rule changes"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/firewall/nat/apply"
+    method: POST
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    validate_certs: false
+  when: nat_rules_result.changed
+  tags:
+    - opnsense
+    - nat_apply
+
+- name: "OPNsense | Configure VPN settings"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/openvpn/service/set"
+    method: POST
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    body_format: json
+    body:
+      enabled: "{{ opnsense_vpn.enabled | default(false) | string }}"
+      server_list: "{{ opnsense_vpn.servers | default([]) | to_json }}"
+    validate_certs: false
+  when: opnsense_vpn is defined
+  tags:
+    - opnsense
+    - vpn
+
+- name: "OPNsense | Enable and configure plugins"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/core/plugins/installed"
+    method: GET
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    validate_certs: false
+  register: installed_plugins
+  tags:
+    - opnsense
+    - plugins
+
+- name: "OPNsense | Install required plugins"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/core/plugins/install/{{ item }}"
+    method: POST
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    validate_certs: false
+  loop: "{{ opnsense_plugins | default([]) }}"
+  when: item not in (installed_plugins.json | default({}) | list)
+  tags:
+    - opnsense
+    - plugin_install
+
+- name: "OPNsense | Backup configuration"
+  ansible.builtin.uri:
+    url: "https://{{ opnsense_host }}:{{ opnsense_web_port | default(443) }}/api/core/backup/download"
+    method: GET
+    user: "{{ opnsense_api_user }}"
+    password: "{{ opnsense_api_password }}"
+    validate_certs: false
+    dest: "/tmp/opnsense-backup-{{ ansible_date_time.epoch }}.xml"
+  when: opnsense_backup_enabled | default(true)
+  tags:
+    - opnsense
+    - backup

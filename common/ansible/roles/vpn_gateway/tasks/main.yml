@@ -1,0 +1,255 @@
+---
+# vpn_gateway/tasks/main.yml
+# VPN gateway configuration (Tailscale, WireGuard, OpenVPN)
+
+- name: "VPN Gateway | Install common VPN dependencies"
+  ansible.builtin.package:
+    name:
+      - curl
+      - wget
+      - iptables
+      - iptables-persistent
+    state: present
+  tags:
+    - vpn
+    - packages
+
+- name: "VPN Gateway | Configure IP forwarding"
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    state: present
+    reload: true
+  tags:
+    - vpn
+    - networking
+
+- name: "VPN Gateway | Install Tailscale"
+  block:
+    - name: "VPN Gateway | Add Tailscale repository key"
+      ansible.builtin.apt_key:
+        url: https://pkgs.tailscale.com/stable/ubuntu/focal.noarmor.gpg
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: "VPN Gateway | Add Tailscale repository"
+      ansible.builtin.apt_repository:
+        repo: "deb https://pkgs.tailscale.com/stable/ubuntu focal main"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: "VPN Gateway | Install Tailscale"
+      ansible.builtin.package:
+        name: tailscale
+        state: present
+
+    - name: "VPN Gateway | Connect to Tailscale"
+      ansible.builtin.command:
+        cmd: "tailscale up --authkey={{ tailscale_auth_key }} --accept-routes --advertise-routes={{ tailscale_advertise_routes | default('') }}"
+      when: tailscale_auth_key is defined
+      register: tailscale_result
+      changed_when: "'Success' in tailscale_result.stdout"
+
+  when: vpn_type == "tailscale"
+  tags:
+    - vpn
+    - tailscale
+
+- name: "VPN Gateway | Install WireGuard"
+  block:
+    - name: "VPN Gateway | Install WireGuard"
+      ansible.builtin.package:
+        name:
+          - wireguard
+          - wireguard-tools
+        state: present
+
+    - name: "VPN Gateway | Generate WireGuard keys"
+      ansible.builtin.shell: |
+        wg genkey | tee /etc/wireguard/private.key | wg pubkey > /etc/wireguard/public.key
+        chmod 600 /etc/wireguard/private.key
+      args:
+        creates: /etc/wireguard/private.key
+
+    - name: "VPN Gateway | Template WireGuard configuration"
+      ansible.builtin.template:
+        src: wg0.conf.j2
+        dest: /etc/wireguard/wg0.conf
+        owner: root
+        group: root
+        mode: '0600'
+      notify: restart wireguard
+
+    - name: "VPN Gateway | Enable and start WireGuard"
+      ansible.builtin.systemd:
+        name: wg-quick@wg0
+        enabled: true
+        state: started
+
+  when: vpn_type == "wireguard"
+  tags:
+    - vpn
+    - wireguard
+
+- name: "VPN Gateway | Install OpenVPN"
+  block:
+    - name: "VPN Gateway | Install OpenVPN"
+      ansible.builtin.package:
+        name:
+          - openvpn
+          - easy-rsa
+        state: present
+
+    - name: "VPN Gateway | Initialize PKI"
+      ansible.builtin.command:
+        cmd: make-cadir /etc/openvpn/easy-rsa
+        creates: /etc/openvpn/easy-rsa
+
+    - name: "VPN Gateway | Template OpenVPN server configuration"
+      ansible.builtin.template:
+        src: server.conf.j2
+        dest: /etc/openvpn/server.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart openvpn
+
+    - name: "VPN Gateway | Generate OpenVPN certificates"
+      ansible.builtin.script:
+        cmd: generate-openvpn-certs.sh
+        creates: /etc/openvpn/easy-rsa/pki/ca.crt
+
+    - name: "VPN Gateway | Enable and start OpenVPN"
+      ansible.builtin.systemd:
+        name: openvpn@server
+        enabled: true
+        state: started
+
+  when: vpn_type == "openvpn"
+  tags:
+    - vpn
+    - openvpn
+
+- name: "VPN Gateway | Configure firewall rules for VPN"
+  ansible.builtin.iptables:
+    table: "{{ item.table | default('filter') }}"
+    chain: "{{ item.chain }}"
+    rule: "{{ item.rule }}"
+    jump: "{{ item.target | default('ACCEPT') }}"
+    comment: "{{ item.comment | default('VPN rule') }}"
+  loop: "{{ vpn_firewall_rules | default([]) }}"
+  notify: save iptables
+  tags:
+    - vpn
+    - firewall
+
+- name: "VPN Gateway | Configure NAT for VPN clients"
+  ansible.builtin.iptables:
+    table: nat
+    chain: POSTROUTING
+    source: "{{ vpn_client_subnet }}"
+    out_interface: "{{ vpn_external_interface | default('eth0') }}"
+    jump: MASQUERADE
+    comment: "NAT for VPN clients"
+  when: vpn_client_subnet is defined
+  notify: save iptables
+  tags:
+    - vpn
+    - nat
+
+- name: "VPN Gateway | Install VPN monitoring scripts"
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - src: vpn-monitor.sh.j2
+      dest: /usr/local/bin/vpn-monitor.sh
+    - src: vpn-client-status.sh.j2
+      dest: /usr/local/bin/vpn-client-status.sh
+  tags:
+    - vpn
+    - monitoring
+
+- name: "VPN Gateway | Setup VPN monitoring cron job"
+  ansible.builtin.cron:
+    name: "VPN Gateway monitoring"
+    minute: "*/5"
+    job: "/usr/local/bin/vpn-monitor.sh"
+    user: root
+  when: vpn_monitoring_enabled | default(true)
+  tags:
+    - vpn
+    - monitoring
+
+- name: "VPN Gateway | Configure VPN client management"
+  ansible.builtin.template:
+    src: vpn-client-mgmt.sh.j2
+    dest: /usr/local/bin/vpn-client-mgmt.sh
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - vpn
+    - client_management
+
+- name: "VPN Gateway | Create VPN user management directory"
+  ansible.builtin.file:
+    path: /etc/vpn/clients
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  tags:
+    - vpn
+    - client_management
+
+- name: "VPN Gateway | Generate client configurations"
+  ansible.builtin.script:
+    cmd: generate-client-config.sh "{{ item.name }}" "{{ item.email | default('') }}"
+    creates: "/etc/vpn/clients/{{ item.name }}.conf"
+  loop: "{{ vpn_clients | default([]) }}"
+  tags:
+    - vpn
+    - client_configs
+
+- name: "VPN Gateway | Verify VPN service status"
+  ansible.builtin.systemd:
+    name: "{{ vpn_service_name }}"
+    state: started
+  vars:
+    vpn_service_name: >-
+      {%- if vpn_type == "tailscale" -%}
+      tailscaled
+      {%- elif vpn_type == "wireguard" -%}
+      wg-quick@wg0
+      {%- elif vpn_type == "openvpn" -%}
+      openvpn@server
+      {%- else -%}
+      unknown
+      {%- endif -%}
+  tags:
+    - vpn
+    - verification
+
+- name: "VPN Gateway | Test VPN connectivity"
+  ansible.builtin.command:
+    cmd: "{{ vpn_test_command }}"
+  vars:
+    vpn_test_command: >-
+      {%- if vpn_type == "tailscale" -%}
+      tailscale status
+      {%- elif vpn_type == "wireguard" -%}
+      wg show
+      {%- elif vpn_type == "openvpn" -%}
+      systemctl status openvpn@server
+      {%- else -%}
+      echo "Unknown VPN type"
+      {%- endif -%}
+  register: vpn_status
+  changed_when: false
+  tags:
+    - vpn
+    - verification

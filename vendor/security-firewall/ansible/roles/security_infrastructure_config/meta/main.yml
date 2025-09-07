@@ -1,5 +1,0 @@
----
-# Security Infrastructure Configuration Role
-
-dependencies:
-  - role: service_management

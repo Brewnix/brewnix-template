@@ -129,8 +129,8 @@ get_vendor_directory() {
         "development")
             echo "development-server"
             ;;
-        "security")
-            echo "security-firewall"
+        "firewall")
+            echo "proxmox-firewall"
             ;;
         *)
             log_error "Unknown vendor type: $vendor_type"
