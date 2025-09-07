@@ -28,9 +28,9 @@ Brewnix is a unified infrastructure management system that supports multiple ser
 2. **Add the server model submodules:**
 
    ```bash
-   git submodule add https://github.com/FyberLabs/proxmox-firewall vendor/proxmox-firewall
-   git submodule add https://github.com/FyberLabs/proxmox-nas vendor/proxmox-nas
-   git submodule add https://github.com/FyberLabs/k3s-cluster vendor/k3s-cluster
+   git submodule add https://github.com/Brewnix/proxmox-firewall vendor/proxmox-firewall
+   git submodule add https://github.com/Brewnix/proxmox-nas vendor/proxmox-nas
+   git submodule add https://github.com/Brewnix/k3s-cluster vendor/k3s-cluster
    git submodule update --init --recursive
    ```
 
