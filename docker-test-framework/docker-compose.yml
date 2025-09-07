@@ -1,0 +1,129 @@
+version: '3.8'
+
+services:
+  # Proxmox VE Mock API Service
+  proxmox-mock:
+    build:
+      context: ./proxmox-mock
+      dockerfile: Dockerfile
+    container_name: brewnix-proxmox-mock
+    ports:
+      - "8006:8006"
+    environment:
+      - MOCK_DATA_PATH=/data
+      - MOCK_MODE=comprehensive
+    volumes:
+      - ./data/proxmox:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/api2/json/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - brewnix-test
+
+  # Test Runner Container
+  test-runner:
+    build:
+      context: ./test-runner
+      dockerfile: Dockerfile
+    container_name: brewnix-test-runner
+    depends_on:
+      proxmox-mock:
+        condition: service_healthy
+    volumes:
+      - ../:/workspace:ro
+      - ./test-results:/results
+      - ./test-data:/test-data
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /workspace
+    environment:
+      - PROXMOX_API_URL=http://proxmox-mock:8006
+      - TEST_MODE=comprehensive
+      - PYTHONPATH=/workspace
+    networks:
+      - brewnix-test
+
+  # Network Test Environment
+  network-sim:
+    build:
+      context: ./network-sim
+      dockerfile: Dockerfile
+    container_name: brewnix-network-sim
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "3001:3001"  # Web UI for network topology
+    volumes:
+      - ./network-configs:/configs
+    networks:
+      - brewnix-test
+
+  # Configuration Validator
+  config-validator:
+    build:
+      context: ./config-validator
+      dockerfile: Dockerfile
+    container_name: brewnix-config-validator
+    volumes:
+      - ../config:/workspace/config:ro
+      - ./test-results:/results
+    environment:
+      - VALIDATION_MODE=strict
+    networks:
+      - brewnix-test
+
+  # Integration Test Database
+  test-db:
+    image: postgres:15-alpine
+    container_name: brewnix-test-db
+    environment:
+      - POSTGRES_DB=brewnix_test
+      - POSTGRES_USER=test
+      - POSTGRES_PASSWORD=testpass
+    volumes:
+      - test-db-data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - brewnix-test
+
+  # Mock USB Device
+  usb-device-mock:
+    build:
+      context: ./usb-mock
+      dockerfile: Dockerfile
+    container_name: brewnix-usb-mock
+    privileged: true
+    volumes:
+      - ../bootstrap:/bootstrap:ro
+      - ./usb-images:/images
+    environment:
+      - USB_DEVICE_SIZE=4GB
+      - FILESYSTEM_TYPE=fat32
+    networks:
+      - brewnix-test
+
+  # Log Aggregator
+  log-collector:
+    image: fluent/fluent-bit:latest
+    container_name: brewnix-log-collector
+    volumes:
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+      - ./test-results:/logs
+    ports:
+      - "24224:24224"
+    networks:
+      - brewnix-test
+
+volumes:
+  test-db-data:
+    driver: local
+
+networks:
+  brewnix-test:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

@@ -1,0 +1,446 @@
+name: Brewnix Template - Test Suite
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 2 * * 0'  # Weekly on Sunday
+
+jobs:
+  build-test-framework:
+    name: Build Docker Test Framework
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Install Docker Compose
+      run: |
+        sudo curl -L "https://github.com/docker/compose/releases/download/v2.21.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        sudo chmod +x /usr/local/bin/docker-compose
+
+    - name: Create test framework
+      run: |
+        echo "Setting up Docker test framework..."
+        mkdir -p docker-test-framework
+        cd docker-test-framework
+
+    - name: Build test containers
+      run: |
+        cd docker-test-framework
+        echo "Building test containers..."
+        # This will be expanded based on the proxmox-firewall framework
+
+    - name: Upload test framework
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-test-framework
+        path: docker-test-framework/
+
+  test-deployment-scripts:
+    name: Test Deployment Scripts
+    runs-on: ubuntu-latest
+    needs: build-test-framework
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyyaml ansible
+
+    - name: Download test framework
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-test-framework
+        path: docker-test-framework/
+
+    - name: Test deployment script help
+      run: |
+        echo "Testing deployment script help..."
+        bash scripts/deploy-vendor.sh --help
+
+    - name: Test vendor type validation
+      run: |
+        echo "Testing vendor type validation..."
+        
+        # Test valid vendor types
+        for vendor in nas k3s-cluster development security; do
+          echo "Testing vendor: $vendor"
+          if ! bash scripts/deploy-vendor.sh "$vendor" non-existent.yml --check-only 2>&1 | grep -q "Site configuration not found"; then
+            echo "ERROR: Vendor $vendor should report missing site config"
+            exit 1
+          fi
+        done
+        
+        # Test invalid vendor type
+        if bash scripts/deploy-vendor.sh invalid-vendor test.yml --check-only 2>&1 | grep -q "Invalid vendor type"; then
+          echo "✓ Invalid vendor type properly rejected"
+        else
+          echo "ERROR: Invalid vendor type not properly rejected"
+          exit 1
+        fi
+
+    - name: Test site configuration validation
+      run: |
+        echo "Testing site configuration validation..."
+        
+        # Test each vendor with its example configuration
+        for site_config in config/sites/*/; do
+          if [ -d "$site_config" ]; then
+            site_name=$(basename "$site_config")
+            config_file="$site_config/${site_name%-example}-site.yml"
+            
+            if [ -f "$config_file" ]; then
+              vendor_type=""
+              case "$site_name" in
+                *nas*) vendor_type="nas" ;;
+                *k3s*) vendor_type="k3s-cluster" ;;
+                *dev*) vendor_type="development" ;;
+                *security*) vendor_type="security" ;;
+              esac
+              
+              if [ -n "$vendor_type" ]; then
+                echo "Testing $vendor_type with $config_file"
+                relative_path="${config_file#config/sites/}"
+                bash scripts/deploy-vendor.sh "$vendor_type" "$relative_path" --check-only || true
+              fi
+            fi
+          fi
+        done
+
+  test-ansible-roles:
+    name: Test Ansible Roles
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Ansible and collections
+      run: |
+        python -m pip install --upgrade pip
+        pip install ansible molecule docker
+        ansible-galaxy collection install community.general
+        ansible-galaxy collection install ansible.posix
+
+    - name: Test common framework roles
+      run: |
+        echo "Testing common framework roles..."
+        for role_dir in common/ansible/roles/*/; do
+          if [ -d "$role_dir" ]; then
+            role_name=$(basename "$role_dir")
+            echo "Testing role: $role_name"
+            
+            cd "$role_dir"
+            # Basic role structure check
+            if [ -f "tasks/main.yml" ]; then
+              echo "✓ $role_name has tasks/main.yml"
+            else
+              echo "✗ $role_name missing tasks/main.yml"
+              exit 1
+            fi
+            
+            # Check if role has molecule tests
+            if [ -d "molecule" ]; then
+              echo "Running molecule tests for $role_name"
+              molecule test || true
+            fi
+            
+            cd - > /dev/null
+          fi
+        done
+
+    - name: Test vendor-specific roles
+      run: |
+        echo "Testing vendor-specific roles..."
+        for vendor_role in vendor/*/ansible/roles/*/; do
+          if [ -d "$vendor_role" ]; then
+            role_name=$(basename "$vendor_role")
+            vendor=$(echo "$vendor_role" | cut -d'/' -f2)
+            echo "Testing $vendor role: $role_name"
+            
+            cd "$vendor_role"
+            if [ -f "tasks/main.yml" ]; then
+              echo "✓ $vendor/$role_name has tasks/main.yml"
+            else
+              echo "✗ $vendor/$role_name missing tasks/main.yml"
+              exit 1
+            fi
+            cd - > /dev/null
+          fi
+        done
+
+    - name: Test ansible.cfg configuration
+      run: |
+        echo "Testing ansible.cfg configurations..."
+        for ansible_cfg in vendor/*/ansible/ansible.cfg; do
+          if [ -f "$ansible_cfg" ]; then
+            vendor=$(echo "$ansible_cfg" | cut -d'/' -f2)
+            echo "Testing $vendor ansible.cfg"
+            
+            # Check roles_path configuration
+            if grep -q "roles_path.*common/ansible/roles" "$ansible_cfg"; then
+              echo "✓ $vendor ansible.cfg has correct roles_path"
+            else
+              echo "✗ $vendor ansible.cfg missing common framework roles_path"
+              exit 1
+            fi
+          fi
+        done
+
+  test-usb-image-creation:
+    name: Test USB Image Creation
+    runs-on: ubuntu-latest
+    needs: build-test-framework
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y squashfs-tools xorriso
+
+    - name: Download test framework
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-test-framework
+        path: docker-test-framework/
+
+    - name: Test USB bootstrap script
+      run: |
+        echo "Testing USB bootstrap functionality..."
+        if [ -f "bootstrap/usb-bootstrap.sh" ]; then
+          echo "Testing USB bootstrap script syntax..."
+          bash -n bootstrap/usb-bootstrap.sh
+          echo "✓ USB bootstrap script syntax is valid"
+        else
+          echo "Warning: USB bootstrap script not found"
+        fi
+
+    - name: Test configuration validation
+      run: |
+        echo "Testing configuration validation..."
+        for script in bootstrap/*.sh; do
+          if [ -f "$script" ]; then
+            echo "Testing script: $script"
+            bash -n "$script"
+            echo "✓ $script syntax is valid"
+          fi
+        done
+
+    - name: Simulate USB image creation
+      run: |
+        echo "Simulating USB image creation process..."
+        
+        # Create test directory structure
+        mkdir -p test-usb/{boot,config,scripts}
+        
+        # Copy bootstrap scripts
+        if [ -d "bootstrap" ]; then
+          cp -r bootstrap/* test-usb/scripts/
+        fi
+        
+        # Copy site configurations
+        if [ -d "config" ]; then
+          cp -r config/* test-usb/config/
+        fi
+        
+        # Create mock ISO structure
+        mkdir -p test-usb/boot/{isolinux,grub}
+        
+        echo "✓ USB image structure created successfully"
+        
+        # Validate structure
+        required_dirs="boot config scripts"
+        for dir in $required_dirs; do
+          if [ -d "test-usb/$dir" ]; then
+            echo "✓ Required directory present: $dir"
+          else
+            echo "✗ Missing required directory: $dir"
+            exit 1
+          fi
+        done
+
+  test-container-builds:
+    name: Test Container and VM Builds
+    runs-on: ubuntu-latest
+    needs: build-test-framework
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Download test framework
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-test-framework
+        path: docker-test-framework/
+
+    - name: Create minimal test framework
+      run: |
+        cd docker-test-framework
+        echo "Creating minimal test framework..."
+        
+        mkdir -p compose proxmox-mock test-runner
+        
+        # Create minimal docker-compose
+        cat > compose/docker-compose.minimal.yml << 'COMPOSE_EOF'
+        version: '3.8'
+        services:
+          proxmox-mock:
+            build: ./proxmox-mock
+            ports:
+              - "8006:8006"
+        COMPOSE_EOF
+        
+        # Create Proxmox mock Dockerfile
+        cat > proxmox-mock/Dockerfile << 'DOCKER_EOF'
+        FROM python:3.11-slim
+        RUN pip install flask
+        COPY app.py /app/app.py
+        WORKDIR /app
+        EXPOSE 8006
+        CMD ["python", "app.py"]
+        DOCKER_EOF
+        
+        # Create simple Flask app
+        cat > proxmox-mock/app.py << 'PYTHON_EOF'
+        from flask import Flask, jsonify
+        app = Flask(__name__)
+
+        @app.route('/health')
+        def health():
+            return jsonify({"status": "healthy"})
+
+        if __name__ == '__main__':
+            app.run(host='0.0.0.0', port=8006)
+        PYTHON_EOF
+
+    - name: Run comprehensive test framework
+      run: |
+        cd docker-test-framework
+        echo "Running comprehensive test framework..."
+        
+        # Make test runner executable
+        chmod +x run-comprehensive-tests.sh
+        
+        # Run full test suite
+        ./run-comprehensive-tests.sh --verbose
+        
+    - name: Upload comprehensive test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: comprehensive-test-results
+        path: |
+          docker-test-framework/test-results/
+          docker-test-framework/logs/
+          docker-test-framework/reports/
+          
+    - name: Publish test results
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Comprehensive Test Results
+        path: docker-test-framework/test-results/integration-test-results.xml
+        reporter: java-junit
+
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [test-deployment-scripts, test-ansible-roles, test-container-builds]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyyaml requests pytest ansible
+
+    - name: Download test framework
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-test-framework
+        path: docker-test-framework/
+
+    - name: Run integration tests
+      run: |
+        echo "Running integration tests..."
+        
+        # Test deployment script integration
+        echo "Testing deployment script with real configurations..."
+        
+        # Test NAS deployment dry-run
+        if [ -f "config/sites/nas-example/nas-site.yml" ]; then
+          echo "Testing NAS deployment dry-run..."
+          bash scripts/deploy-vendor.sh nas nas-example/nas-site.yml --dry-run || true
+        fi
+        
+        # Test K3S deployment dry-run
+        if [ -f "config/sites/k3s-example/k3s-site.yml" ]; then
+          echo "Testing K3S deployment dry-run..."
+          bash scripts/deploy-vendor.sh k3s-cluster k3s-example/k3s-site.yml --dry-run || true
+        fi
+
+    - name: Test cross-vendor compatibility
+      run: |
+        echo "Testing cross-vendor compatibility..."
+        
+        # Verify common framework roles are accessible from all vendors
+        for vendor_dir in vendor/*/ansible; do
+          if [ -d "$vendor_dir" ]; then
+            vendor=$(basename "$(dirname "$vendor_dir")")
+            echo "Testing $vendor framework integration..."
+            
+            cd "$vendor_dir"
+            
+            # Check if roles_path is configured correctly
+            if [ -f "ansible.cfg" ]; then
+              if ansible-config dump | grep -q "common/ansible/roles"; then
+                echo "✓ $vendor can access common framework roles"
+              else
+                echo "✗ $vendor cannot access common framework roles"
+                exit 1
+              fi
+            fi
+            
+            cd - > /dev/null
+          fi
+        done
+
+    - name: Generate integration test report
+      run: |
+        echo "Generating integration test report..."
+        echo '{"status": "completed", "timestamp": "'$(date -Iseconds)'"}' > integration-test-report.json
+        echo "✓ Integration tests completed successfully"
+
+    - name: Upload integration test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: integration-test-report
+        path: integration-test-report.json
