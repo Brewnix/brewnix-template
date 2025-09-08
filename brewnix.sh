@@ -8,9 +8,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/scripts" && pwd)"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${PROJECT_ROOT}/build"
+VENDOR_COMMON_DIR="${PROJECT_ROOT}/vendor/common"
 
 # Export for modules
-export SCRIPT_DIR PROJECT_ROOT BUILD_DIR
+export SCRIPT_DIR PROJECT_ROOT BUILD_DIR VENDOR_COMMON_DIR
 
 # Load core modules
 # Source core modules
@@ -20,7 +21,10 @@ source "${SCRIPT_DIR}/core/logging.sh"
 
 # Source feature modules
 source "${SCRIPT_DIR}/backup/backup.sh"
-source "${SCRIPT_DIR}/opnsense/opnsense.sh"
+# Conditionally source OPNsense module (only available in proxmox-firewall context)
+if [[ -d "${SCRIPT_DIR}/../vendor/proxmox-firewall" && -f "${SCRIPT_DIR}/../vendor/proxmox-firewall/scripts/opnsense/opnsense.sh" && "$PWD" == *"/vendor/proxmox-firewall"* ]]; then
+    source "${SCRIPT_DIR}/../vendor/proxmox-firewall/scripts/opnsense/opnsense.sh"
+fi
 source "${SCRIPT_DIR}/monitoring/monitoring.sh"
 source "${SCRIPT_DIR}/gitops/gitops.sh"
 source "${SCRIPT_DIR}/deployment/deployment.sh"
@@ -46,7 +50,7 @@ MODULES:
     deployment     Firewall and network deployment operations
     backup         Backup and restore operations
     monitoring     Health monitoring and alerting
-    opnsense       OPNsense firewall management
+    opnsense       OPNsense firewall management (proxmox-firewall only)
     gitops         GitOps repository management
     usb            USB bootstrap operations
     test           Testing and validation operations
@@ -185,8 +189,16 @@ route_to_module() {
             backup_main "$@"
             ;;
         opnsense)
-            init_opnsense
-            opnsense_main "$@"
+            # Check if OPNsense module is available
+            if type init_opnsense >/dev/null 2>&1; then
+                init_opnsense
+                opnsense_main "$@"
+            else
+                log_error "OPNsense module not available in this context"
+                log_error "OPNsense functionality is only available in proxmox-firewall submodule"
+                log_error "Navigate to: cd vendor/proxmox-firewall"
+                exit 1
+            fi
             ;;
         monitoring)
             init_monitoring

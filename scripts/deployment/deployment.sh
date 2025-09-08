@@ -44,48 +44,37 @@ generate_inventory() {
 [all:vars]
 ansible_user=root
 ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+site_name=${site_name}
+project_root=${PROJECT_ROOT}
+vendor_common_dir=${VENDOR_COMMON_DIR}
 
-[proxmox]
+[localhost]
+localhost ansible_connection=local
+
+[deployment_hosts]
+# Add your deployment hosts here based on vendor configuration
 EOF
 
-    # Add Proxmox hosts
-    local proxmox_hosts
-    proxmox_hosts=$(echo "$site_config" | python3 -c "
+    # Add vendor-specific hosts based on configuration
+    local vendor_hosts
+    vendor_hosts=$(echo "$site_config" | python3 -c "
 import yaml
 import sys
 try:
     data = yaml.safe_load(sys.stdin.read())
+    # Extract hosts from various vendor configurations
+    hosts = []
     if 'proxmox' in data and 'hosts' in data['proxmox']:
-        for host in data['proxmox']['hosts']:
-            print(host)
-except:
-    pass
-" 2>/dev/null)
-
-    for host in $proxmox_hosts; do
-        echo "$host" >> "$ANSIBLE_INVENTORY"
-    done
-
-    # Add OPNsense hosts
-    cat >> "$ANSIBLE_INVENTORY" << EOF
-
-[opnsense]
-EOF
-
-    local opnsense_hosts
-    opnsense_hosts=$(echo "$site_config" | python3 -c "
-import yaml
-import sys
-try:
-    data = yaml.safe_load(sys.stdin.read())
+        hosts.extend(data['proxmox']['hosts'])
     if 'opnsense' in data and 'hosts' in data['opnsense']:
-        for host in data['opnsense']['hosts']:
-            print(host)
+        hosts.extend(data['opnsense']['hosts'])
+    for host in hosts:
+        print(host)
 except:
     pass
 " 2>/dev/null)
 
-    for host in $opnsense_hosts; do
+    for host in $vendor_hosts; do
         echo "$host" >> "$ANSIBLE_INVENTORY"
     done
 
@@ -113,19 +102,19 @@ deploy_network() {
         return 1
     fi
 
-    # Run network deployment playbook
-    local playbook="${VENDOR_ROOT}/deployment/ansible/network_deploy.yml"
+    # Run common network deployment playbook
+    local playbook="${VENDOR_COMMON_DIR}/ansible/network_deploy.yml"
 
     if [[ ! -f "$playbook" ]]; then
-        log_error "Network deployment playbook not found: $playbook"
-        return 1
+        log_warn "Common network playbook not found, using basic validation"
+        playbook="${VENDOR_COMMON_DIR}/ansible/site.yml"
     fi
 
     log_command ansible-playbook \
         -i "$inventory_file" \
-        "$playbook" \
         --extra-vars "site_name=$site_name" \
-        ${DEPLOYMENT_DRY_RUN:+--check}
+        ${DEPLOYMENT_DRY_RUN:+--check} \
+        "$playbook"
 
     if [[ $? -eq 0 ]]; then
         log_info "Network deployment completed successfully"
@@ -157,12 +146,12 @@ deploy_devices() {
         return 1
     fi
 
-    # Run device deployment playbook
-    local playbook="${VENDOR_ROOT}/deployment/ansible/device_deploy.yml"
+    # Run common device deployment playbook
+    local playbook="${VENDOR_COMMON_DIR}/ansible/device_deploy.yml"
 
     if [[ ! -f "$playbook" ]]; then
-        log_error "Device deployment playbook not found: $playbook"
-        return 1
+        log_warn "Common device playbook not found, using basic validation"
+        playbook="${VENDOR_COMMON_DIR}/ansible/site.yml"
     fi
 
     log_command ansible-playbook \
@@ -200,12 +189,12 @@ deploy_firewall() {
         return 1
     fi
 
-    # Run firewall deployment playbook
-    local playbook="${VENDOR_ROOT}/deployment/ansible/firewall_deploy.yml"
+    # Run common firewall deployment playbook
+    local playbook="${VENDOR_COMMON_DIR}/ansible/firewall_deploy.yml"
 
     if [[ ! -f "$playbook" ]]; then
-        log_error "Firewall deployment playbook not found: $playbook"
-        return 1
+        log_warn "Common firewall playbook not found, using basic validation"
+        playbook="${VENDOR_COMMON_DIR}/ansible/site.yml"
     fi
 
     log_command ansible-playbook \
@@ -325,16 +314,27 @@ deploy_site() {
 
     log_section "Deploying complete site: $site_name"
 
-    # Create backup before deployment
-    local backup_file
-    backup_file=$(create_backup "pre_site_deploy_${site_name}")
+    # Use common deployment script if available
+    local common_deploy_script="${VENDOR_COMMON_DIR}/scripts/deploy_site.sh"
+    if [[ -f "$common_deploy_script" ]]; then
+        log_info "Using common deployment script"
+        bash "$common_deploy_script" "${PROJECT_ROOT}/config/sites/${site_name}.yml" "deployment"
 
-    if [[ $? -ne 0 ]]; then
-        log_error "Failed to create backup"
-        return 1
+        if [[ $? -eq 0 ]]; then
+            log_info "Site deployment completed successfully using common script"
+            return 0
+        else
+            log_error "Common deployment script failed"
+            return 1
+        fi
     fi
 
-    log_info "Pre-deployment backup created: $backup_file"
+    # Fallback to individual deployment steps
+    log_info "Using fallback deployment method"
+
+    # Create build directory
+    BUILD_DIR="${PROJECT_ROOT}/build/${site_name}"
+    mkdir -p "${BUILD_DIR}"
 
     # Deploy network configuration
     if ! deploy_network "$site_name"; then

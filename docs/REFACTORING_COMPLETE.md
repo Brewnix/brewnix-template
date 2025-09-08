@@ -30,7 +30,7 @@ brewnix-template/
 │   ├── k3s-example/
 │   ├── development-example/
 │   └── security-example/
-└── scripts/deploy-vendor.sh       # 🚀 Universal Deployment Script
+└── brewnix.sh                    # 🚀 Universal Deployment Script
 ```
 
 ### 🎯 **Vendor-Specific Capabilities**
@@ -71,7 +71,7 @@ brewnix-template/
 
 ✅ **Network security and firewall:**
 
-- OPNsense firewall management
+- OPNsense firewall management (moved to proxmox-firewall submodule)
 - Suricata IDS for intrusion detection
 - Ntopng for network monitoring
 - Pi-hole for DNS filtering
@@ -84,13 +84,13 @@ brewnix-template/
 
 ```bash
 # Deploy any vendor type with consistent interface
-./scripts/deploy-vendor.sh <vendor_type> <site_config> [options]
+./brewnix.sh deployment site <vendor_type> <site_config> [options]
 
 # Examples:
-./scripts/deploy-vendor.sh k3s-cluster k3s-example/k3s-site.yml
-./scripts/deploy-vendor.sh nas nas-example/nas-site.yml  
-./scripts/deploy-vendor.sh development dev-example/dev-site.yml
-./scripts/deploy-vendor.sh security security-example/security-site.yml
+./brewnix.sh deployment site k3s-cluster config/sites/k3s-example/k3s-site.yml
+./brewnix.sh deployment site proxmox-nas config/sites/nas-example/nas-site.yml
+./brewnix.sh deployment site development-server config/sites/dev-example/dev-site.yml
+./brewnix.sh deployment site proxmox-firewall config/sites/security-example/security-site.yml
 ```
 
 ### 🔧 **Common Framework Benefits**

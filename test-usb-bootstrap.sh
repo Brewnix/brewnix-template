@@ -104,7 +104,7 @@ export GRAFANA_ADMIN_PASSWORD="auto-generated-or-from-config"
 
 # Run network-aware GitOps deployment
 log_info "Running network-aware GitOps deployment..."
-./vendor/proxmox-firewall/gitops/deploy-gitops.sh --operation deploy /opt/brewnix-firewall/site-config.yml
+./brewnix.sh deployment site /opt/brewnix-firewall/site-config.yml
 
 log_success "=== Network-Aware USB Bootstrap Completed Successfully ==="
 log_info "GitOps deployment active with drift detection enabled"

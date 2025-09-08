@@ -52,33 +52,37 @@ git submodule update --init --recursive
 ### 2. Choose Your Deployment Type
 
 #### Deploy NAS Storage
+
 ```bash
-./scripts/deploy-vendor.sh nas nas-example/nas-site.yml
+./brewnix.sh deployment site proxmox-nas config/sites/nas-example/nas-site.yml
 ```
 
-#### Deploy K3S Cluster  
+#### Deploy K3S Cluster
+
 ```bash
-./scripts/deploy-vendor.sh k3s-cluster k3s-example/k3s-site.yml
+./brewnix.sh deployment site k3s-cluster config/sites/k3s-example/k3s-site.yml
 ```
 
 #### Deploy Development Environment
+
 ```bash
-./scripts/deploy-vendor.sh development development-example/dev-site.yml
+./brewnix.sh deployment site development-server config/sites/development-example/dev-site.yml
 ```
 
 #### Deploy Security Infrastructure
+
 ```bash
-./scripts/deploy-vendor.sh security security-example/security-site.yml
+./brewnix.sh deployment site proxmox-firewall config/sites/security-example/security-site.yml
 ```
 
 ### 3. Configuration Validation
 
 ```bash
 # Validate configuration without deployment
-./scripts/deploy-vendor.sh k3s-cluster k3s-example/k3s-site.yml --check-only
+./brewnix.sh deployment validate config/sites/k3s-example/k3s-site.yml
 
 # Dry run to see what would be deployed
-./scripts/deploy-vendor.sh nas nas-example/nas-site.yml --dry-run
+./brewnix.sh deployment site proxmox-nas config/sites/nas-example/nas-site.yml --dry-run
 ```
 
 ## 📁 Project Structure
@@ -153,13 +157,13 @@ k3s_worker:
 
 ```bash
 # Deploy specific components only
-./scripts/deploy-vendor.sh nas nas-site.yml --tags storage,backup
+./brewnix.sh deployment site proxmox-nas config/sites/nas-site.yml --tags storage,backup
 
 # Skip certain components
-./scripts/deploy-vendor.sh k3s-cluster k3s-site.yml --skip-tags monitoring
+./brewnix.sh deployment site k3s-cluster config/sites/k3s-site.yml --skip-tags monitoring
 
 # Verbose output for troubleshooting
-./scripts/deploy-vendor.sh development dev-site.yml --verbose
+./brewnix.sh deployment site development-server config/sites/dev-site.yml --verbose
 ```
 
 ### Multi-Vendor Deployments
@@ -168,13 +172,13 @@ Deploy multiple vendor types on the same Proxmox host:
 
 ```bash
 # Deploy NAS first for shared storage
-./scripts/deploy-vendor.sh nas nas-site.yml
+./brewnix.sh deployment site proxmox-nas config/sites/nas-site.yml
 
 # Deploy K3S cluster that can use NAS storage
-./scripts/deploy-vendor.sh k3s-cluster k3s-site.yml
+./brewnix.sh deployment site k3s-cluster config/sites/k3s-site.yml
 
 # Deploy security infrastructure to protect everything
-./scripts/deploy-vendor.sh security security-site.yml
+./brewnix.sh deployment site proxmox-firewall config/sites/security-site.yml
 ```
 
 ## 🔒 Security Features

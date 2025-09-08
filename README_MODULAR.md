@@ -7,42 +7,55 @@ BrewNix is a modular, GitOps-driven network infrastructure management system des
 The system has been refactored from a single 2867-line monolithic script into a modular architecture with the following components:
 
 ### Core Modules (`scripts/core/`)
-- **`init.sh`** - Environment initialization and prerequisite validation
-- **`config.sh`** - Configuration management and YAML parsing
-- **`logging.sh`** - Centralized logging with multiple output formats
+
+- **`init.sh`** - Environment setup, prerequisite validation, Python venv management
+- **`config.sh`** - YAML configuration parsing, validation, and management
+- **`logging.sh`** - Centralized logging with file/console output, multiple formats
+
+### Vendor Common (`vendor/common/`) - **NEW: Shared Functionality**
+
+- **`ansible/`** - Common Ansible playbooks and configurations
+- **`scripts/`** - Shared deployment, validation, and utility scripts
+- **`README.md`** - Documentation for the common architecture
 
 ### Feature Modules
 
 #### Backup Module (`scripts/backup/`)
+
 - Local and cloud backup operations
 - Proxmox and OPNsense configuration backups
 - Automated backup retention and cleanup
 
-#### OPNsense Module (`scripts/opnsense/`) - **Phase 3 Implementation**
+#### OPNsense Module (`vendor/proxmox-firewall/scripts/opnsense/`) - **Phase 3 Implementation**
+
 - Complete firewall management via REST API
 - Rule and alias management
 - Interface configuration
 - System status monitoring
 
 #### Monitoring Module (`scripts/monitoring/`)
+
 - Health checks for all infrastructure components
 - Automated alerting via email
 - System resource monitoring
 - Comprehensive reporting
 
 #### GitOps Module (`scripts/gitops/`)
+
 - Repository synchronization
 - Configuration drift detection
 - Automated webhook handling
 - Push/pull operations
 
 #### Deployment Module (`scripts/deployment/`)
+
 - Network configuration deployment
 - Device management
 - Ansible playbook orchestration
 - Validation and rollback capabilities
 
 #### Utilities Module (`scripts/utilities/`)
+
 - USB bootstrap creation
 - Testing framework
 - Configuration validation
@@ -51,6 +64,7 @@ The system has been refactored from a single 2867-line monolithic script into a 
 ## Quick Start
 
 ### Prerequisites
+
 ```bash
 # Required tools
 sudo apt-get install ansible git python3 curl jq
@@ -60,6 +74,7 @@ sudo apt-get install docker docker-compose terraform pvesh
 ```
 
 ### Basic Usage
+
 ```bash
 # Make script executable
 chmod +x brewnix.sh
@@ -79,22 +94,25 @@ chmod +x brewnix.sh
 
 ## Module Usage
 
-### OPNsense Management (Phase 3)
+### OPNsense Management (Phase 3) - Proxmox Firewall Only
+
+**Important**: OPNsense functionality is exclusively available within the `proxmox-firewall` submodule context.
+
 ```bash
-# List firewall rules
-./brewnix.sh opnsense rules list
+# Navigate to proxmox-firewall submodule
+cd vendor/proxmox-firewall
 
-# Create a new firewall rule
-./brewnix.sh opnsense rules create lan wan pass "Allow HTTP" "source=192.168.1.0/24" "destination=any" "destination_port=80"
-
-# Get system status
-./brewnix.sh opnsense status
-
-# Apply configuration changes
-./brewnix.sh opnsense apply
+# Use OPNsense commands from within the submodule
+../../brewnix.sh opnsense rules list
+../../brewnix.sh opnsense rules create lan wan pass "Allow HTTP" "source=192.168.1.0/24" "destination=any" "destination_port=80"
+../../brewnix.sh opnsense status
+../../brewnix.sh opnsense apply
 ```
 
+**Note**: Attempting to use OPNsense commands from the main template directory will result in an error directing you to the correct location.
+
 ### Backup Operations
+
 ```bash
 # Create backup
 ./brewnix.sh backup create my_backup
@@ -113,6 +131,7 @@ chmod +x brewnix.sh
 ```
 
 ### Monitoring
+
 ```bash
 # Run health check
 ./brewnix.sh monitoring check
@@ -128,6 +147,7 @@ chmod +x brewnix.sh
 ```
 
 ### GitOps Operations
+
 ```bash
 # Sync repository
 ./brewnix.sh gitops sync
@@ -143,6 +163,7 @@ chmod +x brewnix.sh
 ```
 
 ### Deployment
+
 ```bash
 # Deploy network configuration
 ./brewnix.sh deployment network site1
@@ -158,6 +179,7 @@ chmod +x brewnix.sh
 ```
 
 ### Utilities
+
 ```bash
 # Run tests
 ./brewnix.sh test run all
@@ -175,6 +197,7 @@ chmod +x brewnix.sh
 ## Configuration
 
 ### Main Configuration (`config.yml`)
+
 ```yaml
 network:
   prefix: "10.0.0.0/8"
@@ -205,6 +228,7 @@ monitoring:
 ```
 
 ### OPNsense Configuration
+
 ```yaml
 opnsense:
   host: "fw01.example.com"
@@ -213,22 +237,17 @@ opnsense:
   api_url: "https://fw01.example.com/api"
 ```
 
-## Environment Variables
-
-- `VERBOSE=true` - Enable verbose output
-- `DRY_RUN=true` - Enable dry-run mode
-- `LOG_LEVEL=DEBUG|INFO|WARN|ERROR` - Set logging level
-- `LOG_FILE=/path/to/log` - Custom log file location
-
 ## Development
 
 ### Adding New Modules
+
 1. Create module directory under `scripts/`
 2. Implement main function following the pattern: `module_main()`
 3. Add initialization function: `init_module()`
 4. Update `brewnix.sh` to source and route to the new module
 
 ### Module Structure
+
 ```bash
 scripts/
 ├── core/
@@ -240,6 +259,7 @@ scripts/
 ```
 
 ### Coding Standards
+
 - Use bash strict mode: `set -euo pipefail`
 - Declare and assign variables separately to avoid masking return values
 - Use proper error handling with `|| return 1`
@@ -257,6 +277,7 @@ The old `deploy-gitops.sh` script has been replaced by this modular architecture
 5. **Scalability** - New features can be added without affecting existing code
 
 ### Migration Steps
+
 1. Update any existing automation to use the new command structure
 2. Migrate custom configurations to the new format
 3. Test each module independently before full deployment
@@ -267,18 +288,21 @@ The old `deploy-gitops.sh` script has been replaced by this modular architecture
 ### Common Issues
 
 1. **Module not found**
+
    ```bash
    # Ensure all modules are sourced in brewnix.sh
    ls -la scripts/
    ```
 
 2. **Configuration errors**
+
    ```bash
    # Validate configuration
    ./brewnix.sh validate
    ```
 
 3. **Permission issues**
+
    ```bash
    # Check script permissions
    chmod +x brewnix.sh
@@ -286,12 +310,14 @@ The old `deploy-gitops.sh` script has been replaced by this modular architecture
    ```
 
 4. **Dependency issues**
+
    ```bash
    # Check system dependencies
    ./brewnix.sh deps
    ```
 
 ### Logs and Debugging
+
 ```bash
 # Enable verbose logging
 VERBOSE=true ./brewnix.sh <module> <command>
