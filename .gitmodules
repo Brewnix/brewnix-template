@@ -13,3 +13,6 @@
 [submodule "vendor/scripts"]
 	path = vendor/scripts
 	url = https://github.com/brewnix/scripts
+[submodule "vendor/development-server"]
+	path = vendor/development-server
+	url = https://github.com/brewnix/development-server
