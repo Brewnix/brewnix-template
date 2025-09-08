@@ -1,0 +1,359 @@
+name: Development Workflow Analytics
+
+on:
+  schedule:
+    # Run weekly on Mondays at 9 AM UTC for development insights
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      analysis_period:
+        description: 'Analysis period in days'
+        required: false
+        default: '30'
+        type: choice
+        options:
+          - '7'
+          - '14'
+          - '30'
+          - '90'
+      report_type:
+        description: 'Type of report to generate'
+        required: false
+        default: 'comprehensive'
+        type: choice
+        options:
+          - comprehensive
+          - productivity-only
+          - quality-only
+          - testing-only
+
+jobs:
+  collect-development-metrics:
+    name: Collect Development Metrics
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for commit analysis
+
+      - name: Setup Python for analytics
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install analytics dependencies
+        run: |
+          pip install requests
+
+      - name: Copy analytics script
+        run: |
+          cp scripts/monitoring/generate-development-analytics.py .
+
+      - name: Run development analytics
+        run: |
+          python3 generate-development-analytics.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          ANALYSIS_PERIOD: ${{ github.event.inputs.analysis_period || 30 }}
+
+      - name: Upload analytics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: development-analytics-${{ github.run_id }}
+          path: |
+            development-analytics.json
+            development-analytics.md
+          retention-days: 90
+
+  analyze-code-quality:
+    name: Analyze Code Quality
+    runs-on: ubuntu-latest
+    needs: collect-development-metrics
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download analytics data
+        uses: actions/download-artifact@v4
+        with:
+          name: development-analytics-${{ github.run_id }}
+
+      - name: Setup Node.js for quality analysis
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Copy quality analysis script
+        run: |
+          cp scripts/monitoring/analyze-code-quality.py .
+
+      - name: Run comprehensive code quality analysis
+        run: |
+          python3 analyze-code-quality.py
+
+      - name: Upload updated analytics
+        uses: actions/upload-artifact@v4
+        with:
+          name: development-analytics-updated-${{ github.run_id }}
+          path: |
+            development-analytics.json
+            development-analytics.md
+            code-quality-report.json
+            code-quality-report.md
+          retention-days: 90
+
+  analyze-testing-effectiveness:
+    name: Analyze Testing Effectiveness
+    runs-on: ubuntu-latest
+    needs: analyze-code-quality
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download updated analytics
+        uses: actions/download-artifact@v4
+        with:
+          name: development-analytics-updated-${{ github.run_id }}
+
+      - name: Setup Python for test analysis
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install test analysis tools
+        run: |
+          pip install coverage pytest
+
+      - name: Run test analysis
+        run: |
+          # Find and analyze test files
+          TEST_FILES=$(find . -name "*test*.py" -o -name "test_*.py" | wc -l)
+          echo "test_files: $TEST_FILES" > test-analysis.txt
+
+          # Count test functions/methods
+          TEST_FUNCTIONS=$(find . -name "*test*.py" -exec grep -h "def test_" {} \; | wc -l)
+          echo "test_functions: $TEST_FUNCTIONS" >> test-analysis.txt
+
+          # Check for test coverage if coverage.py is available
+          if command -v coverage >/dev/null 2>&1; then
+            echo "coverage_available: true" >> test-analysis.txt
+          else
+            echo "coverage_available: false" >> test-analysis.txt
+          fi
+
+      - name: Update analytics with testing metrics
+        run: |
+          python3 -c "
+          import json
+          import os
+
+          with open('development-analytics.json', 'r') as f:
+              data = json.load(f)
+
+          # Read test analysis results
+          test_files = 0
+          test_functions = 0
+          coverage_available = False
+
+          try:
+              with open('test-analysis.txt', 'r') as f:
+                  for line in f:
+                      if 'test_files:' in line:
+                          test_files = int(line.split(':')[1].strip())
+                      elif 'test_functions:' in line:
+                          test_functions = int(line.split(':')[1].strip())
+                      elif 'coverage_available:' in line:
+                          coverage_available = line.split(':')[1].strip() == 'true'
+          except:
+              pass
+
+          # Update testing metrics with real data
+          data['testing'].update({
+              'test_files_found': test_files,
+              'test_functions_found': test_functions,
+              'coverage_tool_available': coverage_available,
+              'test_density': test_functions / max(1, test_files) if test_files > 0 else 0
+          })
+
+          with open('development-analytics.json', 'w') as f:
+              json.dump(data, f, indent=2)
+          "
+
+      - name: Upload final analytics
+        uses: actions/upload-artifact@v4
+        with:
+          name: development-analytics-final-${{ github.run_id }}
+          path: |
+            development-analytics.json
+            development-analytics.md
+            code-quality-report.json
+            code-quality-report.md
+          retention-days: 90
+
+  generate-insights-report:
+    name: Generate Insights Report
+    runs-on: ubuntu-latest
+    needs: analyze-testing-effectiveness
+    if: github.event_name == 'schedule' || github.event.inputs.report_type == 'comprehensive'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download final analytics
+        uses: actions/download-artifact@v4
+        with:
+          name: development-analytics-final-${{ github.run_id }}
+
+      - name: Generate enhanced markdown report
+        run: |
+          python3 scripts/monitoring/generate-development-analytics.py markdown
+
+      - name: Upload final report
+        uses: actions/upload-artifact@v4
+        with:
+          name: development-insights-report-${{ github.run_id }}
+          path: |
+            development-analytics.json
+            development-analytics.md
+            code-quality-report.json
+            code-quality-report.md
+          retention-days: 90
+
+      - name: Create weekly insights issue
+        run: |
+          REPORT_CONTENT=$(cat development-analytics.md)
+
+          # Check if weekly insights issue already exists
+          EXISTING_ISSUE=$(gh issue list --label weekly-insights --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING_ISSUE" ]; then
+            # Update existing issue
+            gh issue edit "$EXISTING_ISSUE" \
+              --body "$REPORT_CONTENT" \
+              --title "📊 Weekly Development Insights Report - $(date +%Y-%m-%d)"
+          else
+            # Create new issue
+            gh issue create \
+              --title "📊 Weekly Development Insights Report - $(date +%Y-%m-%d)" \
+              --body "$REPORT_CONTENT" \
+              --label "weekly-insights,report,analytics"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  send-analytics-alerts:
+    name: Send Analytics Alerts
+    runs-on: ubuntu-latest
+    needs: generate-insights-report
+    if: github.event_name == 'schedule'
+
+    steps:
+      - name: Download final analytics
+        uses: actions/download-artifact@v4
+        with:
+          name: development-insights-report-${{ github.run_id }}
+
+      - name: Check for critical insights
+        id: check_alerts
+        run: |
+          # Check for critical issues that need immediate attention
+          CRITICAL_ISSUES=$(python3 -c "
+          import json
+
+          with open('development-analytics.json', 'r') as f:
+              data = json.load(f)
+
+          critical_count = 0
+          alerts = []
+
+          # Check productivity metrics
+          pr_metrics = data['productivity']['pr_metrics']
+          if pr_metrics['merge_time_stats']['mean'] > 168:  # 1 week
+              critical_count += 1
+              alerts.append('PR merge time exceeds 1 week')
+
+          if pr_metrics['open_prs'] > 20:
+              critical_count += 1
+              alerts.append('High number of open PRs (>20)')
+
+          # Check quality metrics
+          quality = data['quality']
+          if quality.get('quality_score', 100) < 60:
+              critical_count += 1
+              alerts.append('Code quality score critically low (<60)')
+
+          # Check testing metrics
+          testing = data['testing']
+          if testing.get('test_success_rate', 100) < 80:
+              critical_count += 1
+              alerts.append('Test success rate critically low (<80%)')
+
+          print(f'critical_issues={critical_count}')
+          print(f'alerts={','.join(alerts)}')
+          " 2>/dev/null || echo "critical_issues=0")
+
+          echo "critical_issues=${CRITICAL_ISSUES:-0}" >> $GITHUB_OUTPUT
+
+      - name: Send Slack alert for critical issues
+        if: steps.check_alerts.outputs.critical_issues != '0' && env.SLACK_WEBHOOK_URL != ''
+        run: |
+          ALERT_MESSAGE="
+          🚨 *BrewNix Development Analytics Alert* 🚨
+
+          Critical issues detected in development metrics:
+
+          $(python3 -c "
+          import json
+          with open('development-analytics.json', 'r') as f:
+              data = json.load(f)
+
+          for insight in data.get('insights', []):
+              if '⚠️' in insight or '❌' in insight:
+                  print(f'• {insight}')
+          " 2>/dev/null)
+
+          Please review the full analytics report for details.
+          "
+
+          # Send to Slack
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"$ALERT_MESSAGE\"}" \
+            "$SLACK_WEBHOOK_URL"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send email alert for critical issues
+        if: steps.check_alerts.outputs.critical_issues != '0' && env.SMTP_SERVER != ''
+        run: |
+          SUBJECT="BrewNix Development Analytics Alert: Critical Issues Detected"
+          BODY="
+          BrewNix Development Analytics Alert
+
+          Critical issues have been detected in the development metrics:
+
+          $(python3 -c "
+          import json
+          with open('development-analytics.json', 'r') as f:
+              data = json.load(f)
+
+          for insight in data.get('insights', []):
+              if '⚠️' in insight or '❌' in insight:
+                  print(f'- {insight}')
+          " 2>/dev/null)
+
+          Please review the attached analytics report for detailed analysis.
+
+          This alert was automatically generated by the BrewNix Development Analytics system.
+          "
+
+          # Send email (requires SMTP configuration)
+          echo "$BODY" | mail -s "$SUBJECT" "$ALERT_EMAIL"
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
