@@ -818,6 +818,7 @@ vendor/common/
 - [ ] Implement multi-stage builds
 - [ ] Add container security scanning
 - [ ] Create container performance benchmarks
+- [ ] Enforce that configuration and data storage are in volumes
 
 #### 5.2.2 Cloud Resource Optimization
 
@@ -840,6 +841,7 @@ vendor/common/
 - Implement centralized user management across all servers
 - Enable role-based access control (RBAC)
 - Support multi-factor authentication (MFA)
+- Utilize let's encrypt for external IP and internal trusted CA otherwise
 
 **Implementation Options**:
 
@@ -1097,6 +1099,7 @@ network_segments:
    - Implement multi-stage builds
    - Add container security scanning
    - Create container performance benchmarks
+   - Enforce that configuration and data storage are in volumes
 
 #### Week 5-6: Infrastructure Readiness
 

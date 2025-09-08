@@ -1,0 +1,10 @@
+{
+  "core_config.sh_duration": 0.0014166831970214844,
+  "core_init.sh_duration": 0.027870655059814453,
+  "core_logging.sh_duration": 0.0012483596801757812,
+  "utility_duplicate-core.sh_duration": 0.0029709339141845703,
+  "utility_sync-core-modules.sh_duration": 0.05487680435180664,
+  "utility_utilities.sh_duration": 0.11428666114807129,
+  "build_build-release.sh_duration": 0.004042148590087891,
+  "build_ci-check.sh_duration": 4.6568896770477295
+}
