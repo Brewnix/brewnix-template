@@ -1,3 +1,6 @@
+[submodule "vendor/common"]
+	path = vendor/common
+	url = https://github.com/Brewnix/common.git
 [submodule "vendor/proxmox-firewall"]
 	path = vendor/proxmox-firewall
 	url = https://github.com/Brewnix/proxmox-firewall
