@@ -16,7 +16,27 @@ declare -A LOG_LEVELS=(
 
 # Initialize logging
 init_logging() {
-    # Create log directory
+    # Set default log file location with proper path resolution
+    if [[ -z "$LOG_FILE" || "$LOG_FILE" == "/brewnix.log" ]]; then
+        # Determine context and set appropriate log file location
+        local script_dir
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+        # Check if we're in a submodule (has vendor/ in path) or template
+        if [[ "$script_dir" == *"/vendor/"* ]]; then
+            # We're in a submodule, use submodule's logs directory
+            local submodule_root
+            submodule_root="$(cd "${script_dir}/../.." && pwd)"
+            LOG_FILE="${submodule_root}/logs/brewnix.log"
+        else
+            # We're in the template, use template's logs directory
+            local template_root
+            template_root="$(cd "${script_dir}/../.." && pwd)"
+            LOG_FILE="${template_root}/logs/brewnix.log"
+        fi
+    fi
+
+    # Create logs directory if it doesn't exist
     local log_dir
     log_dir="$(dirname "$LOG_FILE")"
     mkdir -p "$log_dir"
@@ -65,6 +85,11 @@ should_log() {
 log_message() {
     local level="$1"
     local message="$2"
+
+    # Ensure logging is initialized
+    if [[ -z "$LOG_FILE" || "$LOG_FILE" == "/brewnix.log" ]]; then
+        init_logging
+    fi
 
     if ! should_log "$level"; then
         return

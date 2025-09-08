@@ -1,16 +1,17 @@
 # Brewnix GitOps Implementation Guide
 
-This guide provides a comprehensive roadmap for implementing GitOps for your Brewnix infrastructure across multiple server models.
+This guide provides a comprehensive roadmap for implementing GitOps for your Brewnix infrastructure across multiple server models, including the new duplication strategy for maintaining core module consistency.
 
 ## Table of Contents
 
 1. [Repository Setup](#repository-setup)
 2. [Bootstrap Process](#bootstrap-process)
-3. [Site Configuration](#site-configuration)
-4. [Deployment Workflow](#deployment-workflow)
-5. [State Management](#state-management)
-6. [Security Implementation](#security-implementation)
-7. [Monitoring and Maintenance](#monitoring-and-maintenance)
+3. [Duplication Strategy](#duplication-strategy)
+4. [Site Configuration](#site-configuration)
+5. [Deployment Workflow](#deployment-workflow)
+6. [State Management](#state-management)
+7. [Security Implementation](#security-implementation)
+8. [Monitoring and Maintenance](#monitoring-and-maintenance)
 
 ## Repository Setup
 
@@ -38,6 +39,15 @@ your-network-deployment/
 │   └── staging/                    # Staging site
 ├── bootstrap/                      # Initial setup scripts
 ├── scripts/                        # Management scripts
+│   ├── core/                       # Core infrastructure modules
+│   │   ├── init.sh                 # Initialization functions
+│   │   ├── config.sh               # Configuration management
+│   │   └── logging.sh              # Logging framework
+│   └── utilities/                  # Utility scripts
+│       └── duplicate-core.sh       # Core duplication script
+├── templates/                      # Template infrastructure
+│   ├── submodule-core/             # Core module templates
+│   └── workflows/                  # CI/CD workflow templates
 ├── vendor/                         # Server model submodules
 │   ├── proxmox-firewall/
 │   ├── proxmox-nas/
@@ -88,6 +98,54 @@ your-network-deployment/
    cd /opt/brewnix-deployment
    git status
    ```
+
+## Duplication Strategy
+
+### Overview
+
+The Brewnix duplication strategy ensures consistent core infrastructure across all submodules while allowing for independent development and deployment. This strategy includes:
+
+- **Core Module Synchronization**: Automated sync of init.sh, config.sh, and logging.sh
+- **CI/CD Workflow Templates**: Standardized testing and deployment pipelines
+- **Synchronization Tools**: Scripts for maintaining core module updates
+- **Path Resolution**: Context-aware logging and configuration management
+
+### Core Module Architecture
+
+#### Core Modules
+
+- **init.sh**: Common initialization functions and environment setup
+- **config.sh**: Configuration management and validation
+- **logging.sh**: Centralized logging framework with path resolution
+
+#### Synchronization Process
+
+```bash
+# Duplicate core infrastructure to all submodules
+./scripts/utilities/duplicate-core.sh vendor/proxmox-firewall
+./scripts/utilities/duplicate-core.sh vendor/proxmox-nas
+./scripts/utilities/duplicate-core.sh vendor/k3s-cluster
+
+# Sync core modules from template (run from submodule)
+cd vendor/proxmox-firewall
+./tools/update-core.sh
+```
+
+#### CI/CD Workflow Templates
+
+The duplication strategy includes standardized CI/CD workflows:
+
+- **ci.yml**: Basic continuous integration with linting and validation
+- **test.yml**: Comprehensive test execution with coverage reporting
+- **validate.yml**: Configuration validation and security checks
+
+### Maintenance Workflow
+
+1. **Update Core Modules**: Modify core modules in `scripts/core/`
+2. **Test Changes**: Run tests in template environment
+3. **Sync to Submodules**: Use duplication script to propagate changes
+4. **Verify Deployment**: Run validation in each submodule
+5. **Update Documentation**: Reflect changes in submodule-specific docs
 
 ## Site Configuration
 
@@ -317,10 +375,10 @@ git ls-remote origin
 # Check logs
 tail -f /var/log/brewnix/deployment.log
 
-# Test connectivity
+# Ansible connectivity
 ansible -m ping production
 
-# Verify Terraform state
+# Terraform state
 cd sites/production/terraform
 terraform state list
 ```
@@ -397,10 +455,14 @@ terraform state list
 - [State Management Guide](./STATE_MANAGEMENT.md)
 - [Security Guidelines](./SECURITY.md)
 - [Troubleshooting Guide](./TROUBLESHOOTING.md)
+- [Duplication Analysis](./TASK3_DUPLICATION_ANALYSIS.md)
 
 ### Tools and Scripts
 
-- `scripts/` - Management scripts
+- `scripts/core/` - Core infrastructure modules
+- `scripts/utilities/duplicate-core.sh` - Core duplication script
+- `templates/submodule-core/` - Core module templates
+- `templates/workflows/` - CI/CD workflow templates
 - `bootstrap/` - Initial setup scripts
 - `.github/workflows/` - CI/CD pipelines
 
@@ -412,4 +474,4 @@ terraform state list
 
 ---
 
-This implementation provides a complete GitOps solution for managing Proxmox Firewall infrastructure with automated deployments, comprehensive state management, and robust security practices.
+This implementation provides a complete GitOps solution for managing Proxmox Firewall infrastructure with automated deployments, comprehensive state management, robust security practices, and a sophisticated duplication strategy for maintaining core module consistency across multiple server models.

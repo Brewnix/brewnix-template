@@ -191,6 +191,63 @@ copy_test_files() {
     done
 }
 
+# Copy tools directory
+copy_tools() {
+    local submodule_path="$1"
+
+    log_info "Copying tools directory"
+
+    local tools_dir="${TEMPLATE_DIR}/tools"
+    local dst_tools_dir="${submodule_path}/tools"
+
+    if [[ ! -d "$tools_dir" ]]; then
+        log_warn "Tools directory not found in template: $tools_dir"
+        return 0
+    fi
+
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY RUN] Would copy tools directory: $tools_dir -> $dst_tools_dir"
+    else
+        # Create tools directory
+        mkdir -p "$dst_tools_dir"
+
+        # Copy all files from tools directory
+        cp -r "$tools_dir"/* "$dst_tools_dir"/ 2>/dev/null || true
+
+        # Make scripts executable
+        find "$dst_tools_dir" -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
+
+        log_info "Copied tools directory"
+    fi
+}
+
+# Copy CI/CD workflow templates
+copy_workflows() {
+    local submodule_path="$1"
+
+    log_info "Copying CI/CD workflow templates"
+
+    local workflows_src="${SCRIPT_DIR}/templates/workflows"
+    local workflows_dst="${submodule_path}/.github/workflows"
+
+    if [[ ! -d "$workflows_src" ]]; then
+        log_warn "Workflows directory not found: $workflows_src"
+        return 0
+    fi
+
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY RUN] Would copy workflows: $workflows_src -> $workflows_dst"
+    else
+        # Create workflows directory
+        mkdir -p "$workflows_dst"
+
+        # Copy workflow files
+        cp "$workflows_src"/*.yml "$workflows_dst"/ 2>/dev/null || true
+
+        log_info "Copied CI/CD workflow templates"
+    fi
+}
+
 # Update file permissions
 update_permissions() {
     local submodule_path="$1"
@@ -292,6 +349,11 @@ verify_duplication() {
 
     log_info "Verifying duplication integrity"
 
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY RUN] Skipping verification in dry-run mode"
+        return 0
+    fi
+
     local required_files=(
         "scripts/core/init.sh"
         "scripts/core/config.sh"
@@ -302,6 +364,10 @@ verify_duplication() {
         "tests/core/test_config.sh"
         "tests/core/test_logging.sh"
         "tests/integration/test_deployment.sh"
+        "tools/update-core.sh"
+        ".github/workflows/ci.yml"
+        ".github/workflows/test.yml"
+        ".github/workflows/validate.yml"
     )
 
     local missing_files=()
@@ -381,11 +447,20 @@ Duplicated Files:
   - tests/core/test_logging.sh
   - tests/integration/test_deployment.sh
 
+- Synchronization Tools:
+  - tools/update-core.sh
+
+- CI/CD Workflows:
+  - .github/workflows/ci.yml
+  - .github/workflows/test.yml
+  - .github/workflows/validate.yml
+
 Next Steps:
 1. Run './dev-setup.sh' to initialize the development environment
 2. Run './validate-config.sh' to verify the setup
 3. Run './local-test.sh' to execute tests
-4. Customize configuration files as needed
+4. Run './tools/update-core.sh' to sync with main template when needed
+5. Customize configuration files as needed
 
 For detailed documentation, see README.md
 EOF
@@ -421,6 +496,8 @@ duplicate_core() {
     # Copy files
     copy_core_files "$submodule_path"
     copy_test_files "$submodule_path"
+    copy_tools "$submodule_path"
+    copy_workflows "$submodule_path"
 
     # Update permissions
     update_permissions "$submodule_path"

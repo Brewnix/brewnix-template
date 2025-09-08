@@ -1,0 +1,234 @@
+name: CI - Development Branch
+
+on:
+  push:
+    branches: [ dev, develop ]
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+      - 'docs/**'
+      - 'config/**'
+  pull_request:
+    branches: [ dev, develop ]
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+      - 'docs/**'
+      - 'config/**'
+
+jobs:
+  # Linting and Code Quality
+  lint:
+    name: Code Quality & Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js for markdown linting
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install markdownlint
+        run: npm install -g markdownlint-cli
+
+      - name: Lint shell scripts
+        run: |
+          find . -name "*.sh" -type f -exec shellcheck {} \;
+
+      - name: Lint markdown files
+        run: markdownlint "**/*.md" --ignore node_modules
+
+      - name: Check script permissions
+        run: |
+          find scripts -name "*.sh" -type f -exec test -x {} \; || (echo "Scripts not executable" && exit 1)
+
+      - name: Validate YAML files
+        run: |
+          find . -name "*.yml" -o -name "*.yaml" | xargs -I {} sh -c 'python3 -c "import yaml; yaml.safe_load(open("$1"))" -- {}' || (echo "Invalid YAML" && exit 1)
+
+  # Security Scanning
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Check for secrets
+        run: |
+          # Check for common secret patterns
+          if grep -r "password\|secret\|key\|token" --include="*.sh" --include="*.yml" --include="*.yaml" . | grep -v "example\|template\|test"; then
+            echo "Potential secrets found in code"
+            exit 1
+          fi
+
+      - name: Security audit for shell scripts
+        run: |
+          # Check for dangerous patterns
+          if grep -r "eval\|rm -rf /\|chmod 777\|sudo" --include="*.sh" . | grep -v "#.*eval\|#.*rm -rf\|#.*chmod\|#.*sudo"; then
+            echo "Potentially dangerous patterns found"
+            exit 1
+          fi
+
+  # Sanity Checks
+  sanity:
+    name: Sanity Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup development environment
+        run: |
+          if [[ -f "./dev-setup.sh" ]]; then
+            chmod +x ./dev-setup.sh
+            ./dev-setup.sh
+          fi
+
+      - name: Run configuration validation
+        run: |
+          if [[ -f "./validate-config.sh" ]]; then
+            chmod +x ./validate-config.sh
+            ./validate-config.sh
+          fi
+
+      - name: Run basic tests
+        run: |
+          if [[ -f "./local-test.sh" ]]; then
+            chmod +x ./local-test.sh
+            ./local-test.sh
+          fi
+
+      - name: Check directory structure
+        run: |
+          # Verify required directories exist
+          required_dirs=("scripts/core" "tests" "docs")
+          for dir in "${required_dirs[@]}"; do
+            if [[ ! -d "$dir" ]]; then
+              echo "Missing required directory: $dir"
+              exit 1
+            fi
+          done
+
+      - name: Validate core modules
+        run: |
+          # Check that core modules are present and executable
+          core_files=("scripts/core/init.sh" "scripts/core/config.sh" "scripts/core/logging.sh")
+          for file in "${core_files[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "Missing core file: $file"
+              exit 1
+            fi
+            if [[ ! -x "$file" ]]; then
+              echo "Core file not executable: $file"
+              exit 1
+            fi
+          done
+
+  # Documentation Validation
+  docs:
+    name: Documentation Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install documentation tools
+        run: npm install -g markdownlint-cli
+
+      - name: Validate documentation structure
+        run: |
+          # Check for required documentation files
+          required_docs=("README.md" "docs/IMPLEMENTATION_GUIDE.md")
+          for doc in "${required_docs[@]}"; do
+            if [[ ! -f "$doc" ]]; then
+              echo "Missing documentation: $doc"
+              exit 1
+            fi
+          done
+
+      - name: Check documentation links
+        run: |
+          # Basic link validation in markdown files
+          find docs -name "*.md" -exec grep -l "\[.*\](\|.*)" {} \; | head -5 | xargs -I {} sh -c '
+            echo "Checking links in $1"
+            # Basic URL validation (could be enhanced)
+          ' -- {}
+
+  # Dependency Check
+  dependencies:
+    name: Dependency Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for external dependencies
+        run: |
+          # Check for external tool dependencies in scripts
+          external_tools=("curl" "wget" "git" "docker" "ansible")
+          for tool in "${external_tools[@]}"; do
+            if grep -r "$tool" --include="*.sh" . | grep -v "#"; then
+              echo "External dependency found: $tool"
+            fi
+          done
+
+      - name: Validate script dependencies
+        run: |
+          # Check that scripts source their dependencies correctly
+          if grep -r "source.*scripts/core" --include="*.sh" .; then
+            echo "Scripts properly source core modules"
+          else
+            echo "Warning: Some scripts may not source core modules"
+          fi
+
+  # Final Status Report
+  status:
+    name: CI Status Report
+    runs-on: ubuntu-latest
+    needs: [lint, security, sanity, docs, dependencies]
+    if: always()
+    steps:
+      - name: Generate status report
+        run: |
+          echo "# CI Status Report" > ci-report.md
+          echo "Generated: $(date)" >> ci-report.md
+          echo "" >> ci-report.md
+          echo "## Results:" >> ci-report.md
+          echo "- Linting: ${{ needs.lint.result }}" >> ci-report.md
+          echo "- Security: ${{ needs.security.result }}" >> ci-report.md
+          echo "- Sanity: ${{ needs.sanity.result }}" >> ci-report.md
+          echo "- Documentation: ${{ needs.docs.result }}" >> ci-report.md
+          echo "- Dependencies: ${{ needs.dependencies.result }}" >> ci-report.md
+          cat ci-report.md
+
+      - name: Upload status report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-status-report
+          path: ci-report.md

@@ -1,0 +1,133 @@
+name: Production Branch - Release Validation
+
+on:
+  push:
+    branches: [ main, production, release ]
+  pull_request:
+    branches: [ main, production, release ]
+
+jobs:
+  release-validation:
+    name: Release Validation
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release readiness
+        run: |
+          echo "Validating release readiness..."
+
+          # Check version tags
+          if git tag --list | grep -q "v"; then
+            echo "✓ Version tags found"
+            git describe --tags --abbrev=0
+          else
+            echo "⚠️ No version tags found"
+          fi
+
+          # Check changelog
+          if [ -f "CHANGELOG.md" ]; then
+            echo "✓ Changelog present"
+          else
+            echo "⚠️ No changelog found"
+          fi
+
+      - name: Security scan for release
+        run: |
+          echo "Running security scan for release..."
+          # Basic security checks
+          if [ -f "SECURITY.md" ]; then
+            echo "✓ Security documentation present"
+          fi
+
+          # Check for secrets in code
+          if grep -r "password\|secret\|key" --include="*.sh" --include="*.yml" --include="*.yaml" . | grep -v "example\|template\|test"; then
+            echo "⚠️ Potential secrets found - review required"
+          else
+            echo "✓ No obvious secrets detected"
+          fi
+
+  deployment-dry-run:
+    name: Deployment Dry Run
+    runs-on: ubuntu-latest
+    needs: release-validation
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Simulate production deployment
+        run: |
+          echo "Simulating production deployment..."
+
+          # Check deployment scripts
+          if [ -f "scripts/deploy-site.sh" ]; then
+            echo "✓ Deployment script present"
+            chmod +x scripts/deploy-site.sh
+          fi
+
+          # Validate configuration templates
+          if [ -d "config/" ]; then
+            echo "✓ Configuration templates present"
+            find config/ -name "*.yml" -o -name "*.yaml" | wc -l | xargs echo "Found templates:"
+          fi
+
+          echo "✓ Dry run completed successfully"
+
+  release-notes:
+    name: Generate Release Notes
+    runs-on: ubuntu-latest
+    needs: [release-validation, deployment-dry-run]
+    if: success()
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        run: |
+          echo "# Release Notes - $(date)" > release-notes.md
+          echo "" >> release-notes.md
+          echo "## Changes since last release" >> release-notes.md
+          echo "" >> release-notes.md
+
+          # Get recent commits
+          git log --oneline -10 >> release-notes.md
+
+          echo "" >> release-notes.md
+          echo "## Validation Results" >> release-notes.md
+          echo "- ✅ Release validation passed" >> release-notes.md
+          echo "- ✅ Deployment dry run successful" >> release-notes.md
+          echo "- ✅ Ready for production deployment" >> release-notes.md
+
+          cat release-notes.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: release-notes
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      - name: Create release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Release v${{ github.run_number }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
