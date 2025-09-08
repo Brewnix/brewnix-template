@@ -9,7 +9,48 @@ Phase 1 (Duplication Strategy) has been successfully completed with all 5 steps 
 
 ---
 
-## 🎯 PHASE 2: TESTING INFRASTRUCTURE IMPLEMENTATION
+## �️ ARCHITECTURAL DECISIONS & DISCUSSIONS
+
+### Key Architectural Questions
+
+#### 1. Unified Authentication System
+
+- **Current State**: Root@pam authentication across servers
+- **Proposed**: Enterprise-grade authentication (LDAP/FreeIPA/Keycloak/Authelia)
+- **Impact**: Improved security, centralized user management, RBAC support
+- **Decision Needed**: Which authentication system to implement and where to host it
+
+#### 2. Network Design Standardization
+
+- **Current State**: Ad-hoc network segmentation and IP assignment
+- **Proposed**: Consistent design covering ALL server types with vnet awareness
+- **Impact**: Non-conflicting IP assignments, better network isolation, scalability
+- **Decision Needed**: Network segmentation strategy and IP allocation schema
+
+#### 3. Legacy Component Cleanup
+
+- **Current State**: Redundant proxmox-firewall scripts/ansible/terraform
+- **Proposed**: Remove legacy components and consolidate functionality
+- **Impact**: Reduced maintenance overhead, cleaner codebase, easier updates
+- **Decision Needed**: Scope of cleanup and migration strategy
+
+#### 4. Instance Repository Workflow
+
+- **Current State**: Complex instance management with manual updates
+- **Proposed**: Simplified workflow with automated validation and release management
+- **Impact**: Easier maintenance, automated security scanning, trust in releases
+- **Decision Needed**: Level of automation and validation requirements
+
+#### 5. Server Template Separation
+
+- **Current State**: Server templates embedded in brewnix-template
+- **Proposed**: Separate brewnix-server-templates repository
+- **Impact**: Easier template updates, version independence, reduced instance complexity
+- **Decision Needed**: Repository structure and migration approach
+
+---
+
+## �🎯 PHASE 2: TESTING INFRASTRUCTURE IMPLEMENTATION
 
 ### 2.1 Core CI/CD Pipeline Enhancement
 
@@ -325,6 +366,67 @@ jobs:
 - Automated compatibility testing
 - Community module discovery
 
+### 4.4 Architectural Improvements
+
+**Priority**: MEDIUM | **Estimated Effort**: 3-4 weeks | **Owner**: Architecture Team
+
+#### 4.4.1 Server Templating Repository Separation
+
+**Status**: 🔄 Planned | **Dependencies**: Current template structure
+
+**Objectives**:
+
+- Separate server templates from brewnix-template for cleaner instance deployment
+- Minimize scripting in brewnix-template to enable easier future improvements
+- Link to logic in vendor/common or separate source repos
+- Enable easy 'bumping' of templates in instance repositories
+
+**Current Challenges**:
+
+- **Template Complexity**: Too much scripting embedded in brewnix-template
+- **Update Difficulty**: Hard to improve templates after instance creation
+- **Maintenance Overhead**: Changes require updating multiple instance repos
+- **Version Management**: Difficult to track template versions across instances
+
+**Proposed Architecture**:
+
+```text
+# Separate Repository Structure
+brewnix-server-templates/          # New dedicated repo
+├── templates/
+│   ├── proxmox-host/
+│   ├── k3s-cluster/
+│   ├── nas-server/
+│   └── network-appliance/
+├── scripts/
+│   ├── core/                     # Minimal instance scripts
+│   └── deployment/               # Links to vendor/common
+└── vendor/
+    └── common/                   # Submodule for shared logic
+
+# Instance Repository (Simplified)
+instance-repo/
+├── .brewnix-template             # Template version reference
+├── vendor/
+│   ├── common/                   # Bumped independently
+│   └── server-templates/         # Bumped independently
+└── config/                       # Instance-specific configuration
+```
+
+**Benefits**:
+
+- **Easier Updates**: Templates can be improved without affecting existing instances
+- **Version Independence**: Instances can bump templates independently
+- **Reduced Complexity**: Instance repos contain only configuration
+- **Better Maintenance**: Template improvements don't require instance updates
+
+**Implementation Plan**:
+
+1. **Phase 1**: Create brewnix-server-templates repository
+2. **Phase 2**: Extract server-specific logic from brewnix-template
+3. **Phase 3**: Update instance creation process to use separate templates
+4. **Phase 4**: Implement template bumping scripts for instances
+
 ---
 
 ## 🐛 TECHNICAL DEBT & IMPROVEMENTS
@@ -381,6 +483,69 @@ jobs:
 - [ ] Add spot instance support
 - [ ] Monitor and reduce cloud costs
 
+#### 5.2.3 Unified Authentication System
+
+**Status**: 🔄 Planned | **Dependencies**: Current PAM authentication
+
+**Objectives**:
+
+- Replace root@pam authentication with enterprise-grade solution
+- Implement centralized user management across all servers
+- Enable role-based access control (RBAC)
+- Support multi-factor authentication (MFA)
+
+**Implementation Options**:
+
+- **LDAP/Active Directory**: Enterprise-standard directory service
+- **FreeIPA**: Open-source identity management solution
+- **Keycloak**: Modern identity and access management
+- **Authelia**: Self-hosted authentication and authorization server
+
+**Decision Framework**:
+
+- Evaluate integration complexity with existing infrastructure
+- Assess scalability requirements for multi-server deployments
+- Consider operational overhead and maintenance requirements
+- Review security features and compliance capabilities
+
+#### 5.2.4 Network Segmentation & IP Assignment Design
+
+**Status**: 🔄 Planned | **Dependencies**: Current network configurations
+
+**Objectives**:
+
+- Create consistent IP assignment strategy across ALL server types
+- Implement non-conflicting network segmentation
+- Maintain vnet awareness (similar to original proxmox-firewall concepts)
+- Support both IPv4 and IPv6 addressing schemes
+
+**Requirements**:
+
+- **Server Type Coverage**: Proxmox hosts, VMs, containers, network appliances
+- **Network Zones**: Management, storage, compute, service networks
+- **VLAN Support**: Proper VLAN tagging and isolation
+- **DHCP Integration**: Automated IP assignment with conflict prevention
+- **Documentation**: Visual network diagrams and IP allocation tables
+
+**Implementation Plan**:
+
+```yaml
+# Network Design Template
+network_segments:
+  management:
+    vlan: 10
+    subnet: 10.0.10.0/24
+    gateway: 10.0.10.1
+  storage:
+    vlan: 20
+    subnet: 10.0.20.0/24
+    gateway: 10.0.20.1
+  compute:
+    vlan: 30
+    subnet: 10.0.30.0/24
+    gateway: 10.0.30.1
+```
+
 ### 5.3 Process Improvements
 
 **Priority**: LOW | **Estimated Effort**: 1 week | **Owner**: Process Team
@@ -406,6 +571,60 @@ jobs:
 - [ ] Implement automated rollback procedures
 - [ ] Add incident response runbooks
 - [ ] Create post-mortem automation
+
+#### 5.3.3 Legacy Proxmox-Firewall Cleanup
+
+**Status**: 🔄 Planned | **Dependencies**: Current proxmox-firewall submodule
+
+**Objectives**:
+
+- Remove redundant/legacy scripts, ansible playbooks, and terraform configurations
+- Consolidate overlapping functionality
+- Eliminate deprecated deployment methods
+- Streamline the proxmox-firewall submodule
+
+**Cleanup Scope**:
+
+- **Legacy Scripts**: Identify and remove outdated bash scripts
+- **Ansible Playbooks**: Review and consolidate redundant playbooks
+- **Terraform Configurations**: Remove deprecated infrastructure-as-code
+- **Documentation**: Update references to removed components
+
+**Migration Strategy**:
+
+- [ ] Audit current proxmox-firewall components
+- [ ] Identify dependencies and usage patterns
+- [ ] Create migration plan with rollback procedures
+- [ ] Implement cleanup in phases with testing
+- [ ] Update documentation and training materials
+
+#### 5.3.4 Instance Repository Workflow Simplification
+
+**Status**: 🔄 Planned | **Dependencies**: Current instance creation process
+
+**Objectives**:
+
+- Implement simplified workflow for instance repositories
+- Add automated linting and configuration validation
+- Trust and use only releases from vendor/server repos
+- Create scripts to 'bump' submodules to latest releases
+
+**Workflow Features**:
+
+- **Automated Validation**: Pre-commit hooks for linting and config validation
+- **Release Management**: Scripts to update submodules to latest stable releases
+- **Build Verification**: Automated testing against updated submodule versions
+- **Security Scanning**: Integration with security tools for dependency checking
+
+**Implementation Plan**:
+
+```bash
+# Instance repo workflow script
+./instance-workflow.sh bump-submodules  # Update to latest releases
+./instance-workflow.sh validate-config  # Lint and validate configurations
+./instance-workflow.sh build-test       # Test against updated versions
+./instance-workflow.sh security-scan    # Security vulnerability scanning
+```
 
 ---
 
@@ -567,3 +786,10 @@ jobs:
 ---
 
 This TODO document should be reviewed and updated monthly to reflect current priorities and progress. Last review: September 7, 2025
+
+**Recent Updates:**
+
+- Added architectural decisions section discussing unified authentication, network design, legacy cleanup, instance workflows, and server template separation
+- Integrated infrastructure improvements for authentication and network design
+- Added process improvements for legacy cleanup and instance repository workflows
+- Included server templating repository separation as optional enhancement
