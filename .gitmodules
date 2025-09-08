@@ -10,3 +10,6 @@
 [submodule "vendor/proxmox-nas"]
 	path = vendor/proxmox-nas
 	url = https://github.com/Brewnix/proxmox-nas.git
+[submodule "vendor/scripts"]
+	path = vendor/scripts
+	url = https://github.com/brewnix/scripts
