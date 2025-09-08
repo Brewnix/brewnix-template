@@ -1,0 +1,381 @@
+name: Pipeline Monitoring & Alerting
+
+on:
+  workflow_run:
+    workflows: ["*"]
+    types: [completed]
+  schedule:
+    # Run daily at 6 AM UTC for summary reports
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      report_type:
+        description: 'Type of report to generate'
+        required: false
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - weekly
+          - monthly
+          - custom
+
+jobs:
+  collect-metrics:
+    name: Collect Pipeline Metrics
+    runs-on: ubuntu-latest
+    outputs:
+      workflow-status: ${{ steps.metrics.outputs.status }}
+      execution-time: ${{ steps.metrics.outputs.duration }}
+      failure-rate: ${{ steps.metrics.outputs.failure_rate }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js for metrics processing
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: |
+          npm install @octokit/rest
+          npm install @actions/github
+
+      - name: Collect workflow metrics
+        id: metrics
+        run: |
+          node -e "
+          const { Octokit } = require('@octokit/rest');
+          const { context } = require('@actions/github');
+
+          const octokit = new Octokit({
+            auth: process.env.GITHUB_TOKEN
+          });
+
+          async function collectMetrics() {
+            try {
+              // Get workflow run details
+              const { data: run } = await octokit.actions.getWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: context.payload.workflow_run.id
+              });
+
+              const workflowName = run.name || run.path.split('/').pop().replace('.yml', '');
+              const status = run.conclusion || run.status;
+              const createdAt = new Date(run.created_at);
+              const updatedAt = new Date(run.updated_at);
+              const duration = (updatedAt - createdAt) / 1000; // seconds
+
+              console.log('Workflow:', workflowName);
+              console.log('Status:', status);
+              console.log('Duration:', duration, 'seconds');
+
+              // Get recent workflow runs for failure rate calculation
+              const { data: runs } = await octokit.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: run.workflow_id,
+                per_page: 10
+              });
+
+              const recentRuns = runs.workflow_runs;
+              const failedRuns = recentRuns.filter(r => r.conclusion === 'failure').length;
+              const totalRuns = recentRuns.length;
+              const failureRate = totalRuns > 0 ? (failedRuns / totalRuns * 100).toFixed(2) : 0;
+
+              console.log('Recent failure rate:', failureRate + '%');
+
+              // Output metrics for other jobs
+              console.log('::set-output name=status::' + status);
+              console.log('::set-output name=duration::' + duration);
+              console.log('::set-output name=failure_rate::' + failureRate);
+
+              // Save metrics to file
+              const metrics = {
+                workflow: workflowName,
+                status: status,
+                duration: duration,
+                failure_rate: parseFloat(failureRate),
+                timestamp: new Date().toISOString(),
+                run_id: run.id,
+                html_url: run.html_url
+              };
+
+              require('fs').writeFileSync('pipeline-metrics.json', JSON.stringify(metrics, null, 2));
+
+            } catch (error) {
+              console.error('Error collecting metrics:', error);
+              process.exit(1);
+            }
+          }
+
+          collectMetrics();
+          "
+
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-metrics-${{ github.run_id }}
+          path: pipeline-metrics.json
+          retention-days: 30
+
+  analyze-performance:
+    name: Analyze Pipeline Performance
+    runs-on: ubuntu-latest
+    needs: collect-metrics
+    if: needs.collect-metrics.outputs.workflow-status != ''
+    outputs:
+      alert_needed: ${{ steps.analysis.outputs.alert_needed }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download metrics artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-metrics-${{ github.run_id }}
+
+      - name: Setup Python for analysis
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install analysis dependencies
+        run: |
+          pip install pandas matplotlib seaborn
+
+      - name: Analyze performance trends
+        id: analysis
+        run: |
+          python3 -c "
+          import json
+          import pandas as pd
+          from datetime import datetime, timedelta
+          import os
+
+          # Load current metrics
+          with open('pipeline-metrics.json', 'r') as f:
+            current_metrics = json.load(f)
+
+          print('=== Pipeline Performance Analysis ===')
+          print(f'Workflow: {current_metrics[\"workflow\"]}')
+          print(f'Status: {current_metrics[\"status\"]}')
+          print(f'Duration: {current_metrics[\"duration\"]:.2f} seconds')
+          print(f'Failure Rate: {current_metrics[\"failure_rate\"]}%')
+
+          # Performance thresholds
+          MAX_DURATION = 600  # 10 minutes
+          MAX_FAILURE_RATE = 20  # 20%
+
+          issues = []
+
+          if current_metrics['duration'] > MAX_DURATION:
+            issues.append(f'⚠️  Duration ({current_metrics[\"duration\"]:.2f}s) exceeds threshold ({MAX_DURATION}s)')
+
+          if current_metrics['failure_rate'] > MAX_FAILURE_RATE:
+            issues.append(f'⚠️  Failure rate ({current_metrics[\"failure_rate\"]}%) exceeds threshold ({MAX_FAILURE_RATE}%)')
+
+          if current_metrics['status'] == 'failure':
+            issues.append('❌ Workflow failed')
+
+          if issues:
+            print('\\n🚨 Issues Detected:')
+            for issue in issues:
+              print(f'  {issue}')
+            print('\\n::set-output name=alert_needed::true')
+          else:
+            print('\\n✅ All metrics within acceptable ranges')
+            print('::set-output name=alert_needed::false')
+
+          # Save analysis results
+          analysis = {
+            'timestamp': datetime.now().isoformat(),
+            'workflow': current_metrics['workflow'],
+            'issues': issues,
+            'alert_needed': len(issues) > 0
+          }
+
+          with open('performance-analysis.json', 'w') as f:
+            json.dump(analysis, f, indent=2)
+          "
+
+      - name: Upload analysis artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-analysis-${{ github.run_id }}
+          path: performance-analysis.json
+          retention-days: 30
+
+  send-alerts:
+    name: Send Alerts
+    runs-on: ubuntu-latest
+    needs: [collect-metrics, analyze-performance]
+    if: needs.analyze-performance.outputs.alert_needed == 'true' || needs.collect-metrics.outputs.workflow-status == 'failure'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download metrics and analysis
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-metrics-${{ github.run_id }}
+
+      - name: Download analysis
+        uses: actions/download-artifact@v4
+        with:
+          name: performance-analysis-${{ github.run_id }}
+
+      - name: Send Slack alert
+        if: env.SLACK_WEBHOOK_URL != ''
+        run: |
+          # Create alert message
+          WORKFLOW_NAME=$(jq -r '.workflow' pipeline-metrics.json)
+          STATUS=$(jq -r '.status' pipeline-metrics.json)
+          DURATION=$(jq -r '.duration' pipeline-metrics.json)
+          FAILURE_RATE=$(jq -r '.failure_rate' pipeline-metrics.json)
+          RUN_URL=$(jq -r '.html_url' pipeline-metrics.json)
+
+          ALERT_MESSAGE=\"\"
+          🚨 *BrewNix Pipeline Alert* 🚨
+
+          *Workflow:* \`$WORKFLOW_NAME\`
+          *Status:* \`$STATUS\`
+          *Duration:* \`${DURATION}s\`
+          *Failure Rate:* \`${FAILURE_RATE}%\`
+
+          *Run URL:* $RUN_URL
+
+          <!channel> Please review the pipeline failure.
+          \"\"
+
+          # Send to Slack
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"$ALERT_MESSAGE\"}" \
+            "$SLACK_WEBHOOK_URL"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send email alert
+        if: env.SMTP_SERVER != ''
+        run: |
+          # Create email alert
+          SUBJECT="BrewNix Pipeline Alert: $(jq -r '.workflow' pipeline-metrics.json) - $(jq -r '.status' pipeline-metrics.json)"
+          BODY="
+          BrewNix Pipeline Alert
+
+          Workflow: $(jq -r '.workflow' pipeline-metrics.json)
+          Status: $(jq -r '.status' pipeline-metrics.json)
+          Duration: $(jq -r '.duration' pipeline-metrics.json)s
+          Failure Rate: $(jq -r '.failure_rate' pipeline-metrics.json)%
+
+          Run URL: $(jq -r '.html_url' pipeline-metrics.json)
+
+          Please review the pipeline status.
+          "
+
+          # Send email (requires SMTP configuration)
+          echo "$BODY" | mail -s "$SUBJECT" "$ALERT_EMAIL"
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+
+      - name: Create GitHub issue for critical failures
+        if: needs.collect-metrics.outputs.workflow-status == 'failure'
+        run: |
+          ISSUE_TITLE="🚨 Pipeline Failure: $(jq -r '.workflow' pipeline-metrics.json)"
+          ISSUE_BODY="
+          ## Pipeline Failure Alert
+
+          **Workflow:** $(jq -r '.workflow' pipeline-metrics.json)
+          **Status:** $(jq -r '.status' pipeline-metrics.json)
+          **Duration:** $(jq -r '.duration' pipeline-metrics.json)s
+          **Failure Rate:** $(jq -r '.failure_rate' pipeline-metrics.json)%
+
+          **Run URL:** $(jq -r '.html_url' pipeline-metrics.json)
+
+          ### Analysis
+          $(cat performance-analysis.json | jq -r '.issues[]' | sed 's/^/- /')
+
+          ### Action Required
+          - [ ] Investigate the root cause of the failure
+          - [ ] Review recent changes that may have caused the issue
+          - [ ] Implement fixes and test thoroughly
+          - [ ] Update monitoring thresholds if needed
+
+          ---
+          *This issue was automatically created by the BrewNix Pipeline Monitoring system.*
+          "
+
+          gh issue create \
+            --title "$ISSUE_TITLE" \
+            --body "$ISSUE_BODY" \
+            --label "pipeline-failure,urgent"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  generate-reports:
+    name: Generate Pipeline Reports
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.report_type != ''
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python for reporting
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install reporting dependencies
+        run: |
+          pip install requests
+
+      - name: Copy report generator script
+        run: |
+          cp scripts/monitoring/generate-pipeline-report.py .
+
+      - name: Generate pipeline performance report
+        run: |
+          python3 generate-pipeline-report.py
+
+      - name: Create markdown report
+        run: |
+          python3 generate-pipeline-report.py markdown
+
+      - name: Upload report artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-report-${{ github.run_id }}
+          path: |
+            pipeline-report.json
+            pipeline-report.md
+          retention-days: 30
+
+      - name: Create weekly summary issue
+        if: github.event_name == 'schedule'
+        run: |
+          REPORT_CONTENT=$(cat pipeline-report.md)
+
+          # Check if weekly summary issue already exists
+          EXISTING_ISSUE=$(gh issue list --label weekly-summary --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING_ISSUE" ]; then
+            # Update existing issue
+            gh issue edit "$EXISTING_ISSUE" \
+              --body "$REPORT_CONTENT" \
+              --title "📊 Weekly Pipeline Performance Summary - $(date +%Y-%m-%d)"
+          else
+            # Create new issue
+            gh issue create \
+              --title "📊 Weekly Pipeline Performance Summary - $(date +%Y-%m-%d)" \
+              --body "$REPORT_CONTENT" \
+              --label "weekly-summary,report"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
