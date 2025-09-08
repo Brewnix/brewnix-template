@@ -1,5 +1,0 @@
----
-# Development Environment Configuration Role
-
-dependencies:
-  - role: service_management
