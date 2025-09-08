@@ -366,6 +366,93 @@ jobs:
 - Automated compatibility testing
 - Community module discovery
 
+#### 4.3.3 GitHub Organization and Website Enhancement
+
+**Status**: 🔄 Planned | **Dependencies**: Current GitHub organization
+
+**Objectives**:
+
+- Improve GitHub organization structure and presentation
+- Create comprehensive project website for promotion
+- Establish marketplace for third-party modules
+- Implement support and donation infrastructure
+
+**GitHub Organization Improvements**:
+
+- **Repository Organization**: Logical grouping and clear naming conventions
+- **README Enhancement**: Comprehensive project overview with quick start guides
+- **Issue Templates**: Standardized templates for bugs, features, and support
+- **PR Templates**: Consistent pull request format with checklists
+- **Wiki/Documentation**: Centralized knowledge base and troubleshooting guides
+- **Discussions**: Community forum for questions and collaboration
+- **Projects**: Kanban boards for roadmap and sprint planning
+- **Security**: Security policy, vulnerability reporting, and responsible disclosure
+
+**Website Development**:
+
+- **Project Landing Page**: Professional presentation with feature highlights
+- **Documentation Hub**: Integrated docs with search and navigation
+- **Marketplace Portal**: Browse, rate, and download third-party modules
+- **Support Center**: Knowledge base, FAQs, and community forums
+- **Donation System**: Support project development through donations
+- **Blog/News**: Project updates, tutorials, and community stories
+- **Showcase Gallery**: User deployments and success stories
+
+**Implementation Plan**:
+
+```text
+# Website Structure
+brew-nix.org/
+├── /                    # Landing page with hero, features, getting started
+├── /docs               # Documentation hub (integrated with GitHub wiki)
+├── /marketplace        # Module marketplace with search and categories
+├── /support            # Support center with forums and knowledge base
+├── /donate             # Donation page with various options
+├── /blog               # News, tutorials, and community content
+├── /showcase           # User deployments and success stories
+└── /about              # Team, roadmap, and project information
+```
+
+**Marketplace Features**:
+
+- **Module Discovery**: Search and filter by category, rating, downloads
+- **Quality Assurance**: Automated testing and compatibility verification
+- **Community Ratings**: User reviews and ratings system
+- **Developer Portal**: Submit and manage modules
+- **Integration APIs**: Programmatic access for CI/CD integration
+- **Monetization**: Optional paid modules and premium features
+
+**Support Infrastructure**:
+
+- **Community Forums**: Discussion boards for help and collaboration
+- **Knowledge Base**: Comprehensive FAQ and troubleshooting guides
+- **Live Chat**: Real-time support for urgent issues
+- **Ticketing System**: Organized support ticket management
+- **Video Tutorials**: Step-by-step guides and walkthroughs
+
+**Donation and Funding**:
+
+- **GitHub Sponsors**: Direct sponsorship through GitHub
+- **Open Collective**: Transparent funding and expense tracking
+- **Patreon**: Monthly support with exclusive content
+- **Cryptocurrency**: Accept crypto donations
+- **Corporate Sponsors**: Business sponsorship opportunities
+
+**Success Metrics**:
+
+- **Community Growth**: Track user registrations, forum activity, GitHub stars
+- **Marketplace Adoption**: Module downloads, developer submissions, ratings
+- **Support Efficiency**: Response times, resolution rates, user satisfaction
+- **Funding Goals**: Monthly recurring revenue, one-time donations, sponsorships
+
+**Timeline and Phases**:
+
+1. **Phase 1 (1-2 weeks)**: GitHub organization cleanup and README enhancement
+2. **Phase 2 (2-3 weeks)**: Basic website with landing page and documentation
+3. **Phase 3 (3-4 weeks)**: Marketplace portal development and module submission
+4. **Phase 4 (2-3 weeks)**: Support infrastructure and community features
+5. **Phase 5 (1-2 weeks)**: Donation system implementation and launch
+
 ### 4.4 Architectural Improvements
 
 **Priority**: MEDIUM | **Estimated Effort**: 3-4 weeks | **Owner**: Architecture Team
@@ -426,6 +513,84 @@ instance-repo/
 2. **Phase 2**: Extract server-specific logic from brewnix-template
 3. **Phase 3**: Update instance creation process to use separate templates
 4. **Phase 4**: Implement template bumping scripts for instances
+
+#### 4.4.2 Vendor/Common Repository Restructuring
+
+**Status**: 🔄 Planned | **Dependencies**: Current vendor/common structure
+
+**Objectives**:
+
+- Restructure vendor/common to hold common/ansible, common/terraform, common/scripts, common/web-ui, common/docs, common/bootstrap
+- Pull relevant directories from brewnix-template
+- Create centralized shared components for all repositories
+- Enable better code reuse and maintenance across the ecosystem
+
+**Current Structure Analysis**:
+
+```text
+# Current vendor/common (limited scope)
+vendor/common/
+├── ansible/
+│   ├── ansible.cfg           # Basic Ansible config
+│   └── site.yml              # Common deployment playbook
+└── scripts/
+    ├── validate_config.sh    # Basic config validation
+    ├── deploy_site.sh        # Basic deployment
+    └── prerequisites.sh      # Basic prerequisites check
+```
+
+**Proposed Structure**:
+
+```text
+# Enhanced vendor/common (comprehensive shared components)
+vendor/common/
+├── ansible/                  # Shared Ansible playbooks and roles
+│   ├── ansible.cfg          # Standardized Ansible configuration
+│   ├── roles/               # Reusable Ansible roles
+│   └── playbooks/           # Common deployment playbooks
+├── terraform/               # Shared Terraform modules
+│   ├── modules/             # Reusable infrastructure modules
+│   └── templates/           # Infrastructure-as-code templates
+├── scripts/                 # Shared utility scripts
+│   ├── core/                # Core infrastructure scripts
+│   ├── utilities/           # Helper and utility scripts
+│   └── validation/          # Configuration validation scripts
+├── web-ui/                  # Shared web interface components
+│   ├── components/          # Reusable UI components
+│   ├── assets/              # Shared static assets
+│   └── templates/           # UI templates
+├── docs/                    # Shared documentation
+│   ├── guides/              # User guides and tutorials
+│   ├── api/                 # API documentation
+│   └── templates/           # Documentation templates
+└── bootstrap/               # Bootstrap and initialization
+    ├── scripts/             # Bootstrap scripts
+    ├── configs/             # Default configurations
+    └── templates/           # Bootstrap templates
+```
+
+**Integration Points**:
+
+- **BrewNix-Template**: Sources from vendor/common for shared functionality
+- **Vendor Submodules**: Use vendor/common when in instance repositories
+- **Server Templates**: Include vendor/common for shared deployment logic
+- **Instance Repositories**: Can bump vendor/common independently
+
+**Migration Strategy**:
+
+1. **Phase 1**: Audit current brewnix-template directories for extraction candidates
+2. **Phase 2**: Create enhanced vendor/common structure
+3. **Phase 3**: Migrate shared components with backward compatibility
+4. **Phase 4**: Update all repositories to use new vendor/common structure
+5. **Phase 5**: Implement automated synchronization and update mechanisms
+
+**Benefits**:
+
+- **Centralized Maintenance**: Single source of truth for shared components
+- **Better Code Reuse**: Eliminate duplication across repositories
+- **Easier Updates**: Changes to shared components benefit all repositories
+- **Version Management**: Independent bumping of shared components
+- **Consistency**: Standardized approaches across all repositories
 
 ---
 
@@ -793,3 +958,5 @@ This TODO document should be reviewed and updated monthly to reflect current pri
 - Integrated infrastructure improvements for authentication and network design
 - Added process improvements for legacy cleanup and instance repository workflows
 - Included server templating repository separation as optional enhancement
+- Added vendor/common repository restructuring for better shared component management
+- Integrated GitHub organization and website enhancement with marketplace and support infrastructure
