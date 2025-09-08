@@ -1,0 +1,479 @@
+name: Staging Environment Automation
+
+on:
+  push:
+    branches: [ staging, main ]
+    paths:
+      - 'sites/**'
+      - 'ansible/**'
+      - 'terraform/**'
+      - 'scripts/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sites/**'
+      - 'ansible/**'
+      - 'terraform/**'
+      - 'scripts/**'
+  workflow_dispatch:
+    inputs:
+      deployment_strategy:
+        description: 'Deployment strategy to use'
+        required: false
+        default: 'blue-green'
+        type: choice
+        options:
+          - blue-green
+          - canary
+          - rolling
+      canary_percentage:
+        description: 'Percentage of traffic for canary deployment (1-100)'
+        required: false
+        default: '10'
+        type: string
+      staging_validation:
+        description: 'Run extended staging validation'
+        required: false
+        default: true
+        type: boolean
+      production_readiness_check:
+        description: 'Run production readiness validation'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  TF_VERSION: '1.13.'
+  ANSIBLE_VERSION: '11.9.0'
+  CANARY_PERCENTAGE: ${{ github.event.inputs.canary_percentage || '10' }}
+  DEPLOYMENT_STRATEGY: ${{ github.event.inputs.deployment_strategy || 'blue-green' }}
+
+jobs:
+  validate-and-prepare:
+    name: Validate Configuration & Prepare Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      sites-changed: ${{ steps.sites.outputs.sites }}
+      deployment-strategy: ${{ steps.strategy.outputs.strategy }}
+      canary-percentage: ${{ steps.strategy.outputs.canary_percentage }}
+      validation-enabled: ${{ steps.strategy.outputs.validation_enabled }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible==${{ env.ANSIBLE_VERSION }} ansible-lint
+
+      - name: Determine deployment strategy
+        id: strategy
+        run: |
+          STRATEGY="${{ github.event.inputs.deployment_strategy || 'blue-green' }}"
+          CANARY_PCT="${{ github.event.inputs.canary_percentage || '10' }}"
+          VALIDATION="${{ github.event.inputs.staging_validation || 'true' }}"
+          PROD_CHECK="${{ github.event.inputs.production_readiness_check || 'true' }}"
+
+          echo "strategy=$STRATEGY" >> $GITHUB_OUTPUT
+          echo "canary_percentage=$CANARY_PCT" >> $GITHUB_OUTPUT
+          echo "validation_enabled=$VALIDATION" >> $GITHUB_OUTPUT
+          echo "production_check_enabled=$PROD_CHECK" >> $GITHUB_OUTPUT
+
+          echo "Deployment Strategy: $STRATEGY"
+          echo "Canary Percentage: $CANARY_PCT%"
+          echo "Extended Validation: $VALIDATION"
+          echo "Production Readiness Check: $PROD_CHECK"
+
+      - name: Validate configuration files
+        run: |
+          echo "Validating YAML configuration files..."
+          find sites/ -name "*.yml" -o -name "*.yaml" | xargs -I {} python -c "
+          import yaml, sys
+          try:
+            yaml.safe_load(open('{}'))
+            print(f'✓ {sys.argv[1]}')
+          except Exception as e:
+            print(f'✗ {sys.argv[1]}: {e}')
+            sys.exit(1)
+          " {} || exit 1
+
+      - name: Lint Ansible playbooks
+        run: |
+          echo "Linting Ansible playbooks..."
+          ansible-lint ansible/ || true
+
+      - name: Validate Terraform configurations
+        run: |
+          echo "Validating Terraform configurations..."
+          find sites/ -name "*.tf" -exec dirname {} \; | sort -u | xargs -I {} sh -c '
+            cd {}
+            echo "Validating Terraform in $(basename {})"
+            terraform init -backend=false
+            terraform validate
+          '
+
+      - name: Check changed sites
+        id: sites
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED_SITES=$(git diff --name-only origin/${{ github.base_ref }} | grep '^sites/' | cut -d'/' -f2 | sort | uniq | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          else
+            CHANGED_SITES=$(git diff --name-only ${{ github.event.before }} | grep '^sites/' | cut -d'/' -f2 | sort | uniq | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          fi
+          echo "sites=$CHANGED_SITES" >> $GITHUB_OUTPUT
+          echo "Changed sites: $CHANGED_SITES"
+
+  create-staging-environment:
+    name: Create Staging Environment
+    runs-on: ubuntu-latest
+    needs: validate-and-prepare
+    if: needs.validate-and-prepare.outputs.sites-changed != '[]'
+    outputs:
+      staging-environment-id: ${{ steps.create-env.outputs.environment_id }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Create staging environment
+        id: create-env
+        run: |
+          ENVIRONMENT_ID="staging-$(date +%Y%m%d-%H%M%S)"
+          echo "environment_id=$ENVIRONMENT_ID" >> $GITHUB_OUTPUT
+
+          echo "Creating staging environment: $ENVIRONMENT_ID"
+          echo "STAGING_ENVIRONMENT_ID=$ENVIRONMENT_ID" >> $GITHUB_ENV
+
+          # Create staging environment configuration
+          mkdir -p staging/$ENVIRONMENT_ID
+          echo "environment_id: $ENVIRONMENT_ID" > staging/$ENVIRONMENT_ID/config.yml
+          echo "created_at: $(date -Iseconds)" >> staging/$ENVIRONMENT_ID/config.yml
+          echo "deployment_strategy: ${{ needs.validate-and-prepare.outputs.deployment-strategy }}" >> staging/$ENVIRONMENT_ID/config.yml
+          echo "canary_percentage: ${{ needs.validate-and-prepare.outputs.canary-percentage }}" >> staging/$ENVIRONMENT_ID/config.yml
+
+      - name: Setup SSH for staging
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.STAGING_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.STAGING_PROXMOX_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to staging environment
+        run: |
+          export ANSIBLE_HOST_KEY_CHECKING=False
+          export TF_VAR_proxmox_host=${{ secrets.STAGING_PROXMOX_HOST }}
+          export TF_VAR_environment=staging
+          export TF_VAR_staging_environment_id=$STAGING_ENVIRONMENT_ID
+
+          for site in $(echo '${{ needs.validate-and-prepare.outputs.sites-changed }}' | jq -r '.[]'); do
+            echo "Deploying site: $site to staging environment: $STAGING_ENVIRONMENT_ID"
+            ./scripts/staging/deploy-staging.sh "$site" "$STAGING_ENVIRONMENT_ID"
+          done
+
+      - name: Upload staging artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-environment-${{ steps.create-env.outputs.environment_id }}
+          path: staging/${{ steps.create-env.outputs.environment_id }}/
+          retention-days: 7
+
+  blue-green-deployment:
+    name: Blue-Green Deployment
+    runs-on: ubuntu-latest
+    needs: [validate-and-prepare, create-staging-environment]
+    if: needs.validate-and-prepare.outputs.deployment-strategy == 'blue-green' && needs.validate-and-prepare.outputs.sites-changed != '[]'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Download staging artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-environment-${{ needs.create-staging-environment.outputs.staging-environment-id }}
+          path: staging/${{ needs.create-staging-environment.outputs.staging-environment-id }}/
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run blue-green deployment validation
+        run: |
+          export STAGING_ENVIRONMENT_ID=${{ needs.create-staging-environment.outputs.staging-environment-id }}
+
+          for site in $(echo '${{ needs.validate-and-prepare.outputs.sites-changed }}' | jq -r '.[]'); do
+            echo "Running blue-green validation for site: $site"
+            ./scripts/staging/blue-green-validation.sh "$site" "$STAGING_ENVIRONMENT_ID"
+          done
+
+      - name: Traffic switching simulation
+        run: |
+          echo "Simulating traffic switching from blue to green environment..."
+          echo "Current: Blue environment active"
+          echo "Switching to: Green environment (staging)"
+
+          # Simulate traffic switching
+          ./scripts/staging/traffic-switch.sh "${{ needs.create-staging-environment.outputs.staging-environment-id }}" "green"
+
+      - name: Monitor green environment
+        run: |
+          echo "Monitoring green environment health..."
+          ./scripts/staging/monitor-environment.sh "${{ needs.create-staging-environment.outputs.staging-environment-id }}" "300"
+
+  canary-deployment:
+    name: Canary Deployment
+    runs-on: ubuntu-latest
+    needs: [validate-and-prepare, create-staging-environment]
+    if: needs.validate-and-prepare.outputs.deployment-strategy == 'canary' && needs.validate-and-prepare.outputs.sites-changed != '[]'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Download staging artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-environment-${{ needs.create-staging-environment.outputs.staging-environment-id }}
+          path: staging/${{ needs.create-staging-environment.outputs.staging-environment-id }}/
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run canary deployment
+        run: |
+          export STAGING_ENVIRONMENT_ID=${{ needs.create-staging-environment.outputs.staging-environment-id }}
+          export CANARY_PERCENTAGE=${{ needs.validate-and-prepare.outputs.canary-percentage }}
+
+          for site in $(echo '${{ needs.validate-and-prepare.outputs.sites-changed }}' | jq -r '.[]'); do
+            echo "Running canary deployment for site: $site (${CANARY_PERCENTAGE}% traffic)"
+            ./scripts/staging/canary-deployment.sh "$site" "$STAGING_ENVIRONMENT_ID" "$CANARY_PERCENTAGE"
+          done
+
+      - name: Monitor canary deployment
+        run: |
+          echo "Monitoring canary deployment metrics..."
+          ./scripts/staging/monitor-canary.sh "${{ needs.create-staging-environment.outputs.staging-environment-id }}" "600"
+
+      - name: Analyze canary results
+        run: |
+          echo "Analyzing canary deployment results..."
+          ./scripts/staging/analyze-canary-results.sh "${{ needs.create-staging-environment.outputs.staging-environment-id }}"
+
+  extended-staging-validation:
+    name: Extended Staging Validation
+    runs-on: ubuntu-latest
+    needs: [validate-and-prepare, create-staging-environment]
+    if: needs.validate-and-prepare.outputs.validation-enabled == 'true' && needs.validate-and-prepare.outputs.sites-changed != '[]'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Download staging artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-environment-${{ needs.create-staging-environment.outputs.staging-environment-id }}
+          path: staging/${{ needs.create-staging-environment.outputs.staging-environment-id }}/
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run comprehensive staging tests
+        run: |
+          export STAGING_ENVIRONMENT_ID=${{ needs.create-staging-environment.outputs.staging-environment-id }}
+
+          echo "Running comprehensive staging validation..."
+          ./scripts/staging/comprehensive-validation.sh "$STAGING_ENVIRONMENT_ID"
+
+      - name: Performance testing
+        run: |
+          echo "Running performance tests on staging environment..."
+          ./scripts/staging/performance-test.sh "$STAGING_ENVIRONMENT_ID"
+
+      - name: Security validation
+        run: |
+          echo "Running security validation on staging environment..."
+          ./scripts/staging/security-validation.sh "$STAGING_ENVIRONMENT_ID"
+
+      - name: Generate validation report
+        run: |
+          echo "Generating staging validation report..."
+          ./scripts/staging/generate-validation-report.sh "$STAGING_ENVIRONMENT_ID"
+
+      - name: Upload validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-validation-report-${{ needs.create-staging-environment.outputs.staging-environment-id }}
+          path: staging/${{ needs.create-staging-environment.outputs.staging-environment-id }}/validation-report.json
+          retention-days: 30
+
+  production-readiness-check:
+    name: Production Readiness Check
+    runs-on: ubuntu-latest
+    needs: [validate-and-prepare, create-staging-environment, extended-staging-validation]
+    if: needs.validate-and-prepare.outputs.sites-changed != '[]'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Download staging artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-environment-${{ needs.create-staging-environment.outputs.staging-environment-id }}
+          path: staging/${{ needs.create-staging-environment.outputs.staging-environment-id }}/
+
+      - name: Download validation report
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-validation-report-${{ needs.create-staging-environment.outputs.staging-environment-id }}
+          path: staging/${{ needs.create-staging-environment.outputs.staging-environment-id }}/
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run production readiness assessment
+        id: readiness
+        run: |
+          export STAGING_ENVIRONMENT_ID=${{ needs.create-staging-environment.outputs.staging-environment-id }}
+
+          echo "Running production readiness assessment..."
+          ./scripts/staging/production-readiness-check.sh "$STAGING_ENVIRONMENT_ID"
+
+          # Check if ready for production
+          if [ -f "staging/$STAGING_ENVIRONMENT_ID/production-ready" ]; then
+            echo "production_ready=true" >> $GITHUB_OUTPUT
+            echo "✅ Staging environment is ready for production deployment"
+          else
+            echo "production_ready=false" >> $GITHUB_OUTPUT
+            echo "❌ Staging environment is NOT ready for production deployment"
+            exit 1
+          fi
+
+      - name: Generate production deployment plan
+        if: steps.readiness.outputs.production_ready == 'true'
+        run: |
+          echo "Generating production deployment plan..."
+          ./scripts/staging/generate-deployment-plan.sh "${{ needs.create-staging-environment.outputs.staging-environment-id }}"
+
+      - name: Upload deployment plan
+        if: steps.readiness.outputs.production_ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-deployment-plan-${{ needs.create-staging-environment.outputs.staging-environment-id }}
+          path: staging/${{ needs.create-staging-environment.outputs.staging-environment-id }}/deployment-plan.json
+          retention-days: 30
+
+  cleanup-staging:
+    name: Cleanup Staging Environment
+    runs-on: ubuntu-latest
+    needs: [validate-and-prepare, create-staging-environment, production-readiness-check]
+    if: always() && needs.validate-and-prepare.outputs.sites-changed != '[]'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cleanup staging environment
+        run: |
+          export STAGING_ENVIRONMENT_ID=${{ needs.create-staging-environment.outputs.staging-environment-id }}
+
+          echo "Cleaning up staging environment: $STAGING_ENVIRONMENT_ID"
+          ./scripts/staging/cleanup-staging.sh "$STAGING_ENVIRONMENT_ID"
+
+      - name: Archive staging logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-logs-${{ needs.create-staging-environment.outputs.staging-environment-id }}
+          path: staging/${{ needs.create-staging-environment.outputs.staging-environment-id }}/logs/
+          retention-days: 30
+
+  notify-staging-results:
+    name: Notify Staging Results
+    runs-on: ubuntu-latest
+    needs: [validate-and-prepare, create-staging-environment, extended-staging-validation, production-readiness-check, cleanup-staging]
+    if: always()
+
+    steps:
+      - name: Generate staging summary
+        run: |
+          STATUS="${{ needs.production-readiness-check.result }}"
+          STRATEGY="${{ needs.validate-and-prepare.outputs.deployment-strategy }}"
+          ENVIRONMENT_ID="${{ needs.create-staging-environment.outputs.staging-environment-id }}"
+
+          echo "## Staging Environment Automation Results" > staging-summary.md
+          echo "" >> staging-summary.md
+          echo "**Status:** $STATUS" >> staging-summary.md
+          echo "**Strategy:** $STRATEGY" >> staging-summary.md
+          echo "**Environment ID:** $ENVIRONMENT_ID" >> staging-summary.md
+          echo "**Timestamp:** $(date -Iseconds)" >> staging-summary.md
+          echo "" >> staging-summary.md
+
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ Staging environment automation completed successfully" >> staging-summary.md
+            echo "✅ Production readiness check passed" >> staging-summary.md
+          else
+            echo "❌ Staging environment automation failed or incomplete" >> staging-summary.md
+            echo "❌ Production readiness check failed" >> staging-summary.md
+          fi
+
+      - name: Upload staging summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-summary-${{ needs.create-staging-environment.outputs.staging-environment-id }}
+          path: staging-summary.md
+          retention-days: 30
+
+      - name: Notify stakeholders
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ needs.production-readiness-check.result }}
+          text: "Staging Environment Automation ${{ needs.production-readiness-check.result }} - Environment: ${{ needs.create-staging-environment.outputs.staging-environment-id }}"
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: env.SLACK_WEBHOOK_URL != null
