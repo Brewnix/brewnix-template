@@ -1,0 +1,227 @@
+# BrewNix Integration Test Configuration
+# Phase 2.1.2 - Cross-Submodule Integration Testing
+# This file configures the integration test framework
+
+# Test Framework Configuration
+framework:
+  version: "2.1.2"
+  name: "BrewNix Cross-Submodule Integration Test Suite"
+  description: "Comprehensive integration testing across all BrewNix submodules"
+
+# Test Environment Configuration
+environment:
+  # Test execution settings
+  timeout_minutes: 30
+  parallel_execution: true
+  max_parallel_jobs: 4
+
+  # Resource allocation
+  memory_limit: "2G"
+  cpu_limit: "2"
+
+  # Cleanup settings
+  cleanup_after_test: true
+  preserve_logs: true
+  log_retention_days: 7
+
+# Test Categories Configuration
+test_categories:
+
+  # Cross-submodule dependency tests
+  cross_submodule:
+    enabled: true
+    description: "Test inter-submodule dependencies and data flow"
+    timeout_minutes: 10
+    required: true
+
+  # Contract tests between submodules
+  contract:
+    enabled: true
+    description: "Validate API contracts and interfaces between submodules"
+    timeout_minutes: 15
+    required: true
+
+  # End-to-end deployment tests
+  e2e_deployment:
+    enabled: true
+    description: "Full deployment scenario validation"
+    timeout_minutes: 20
+    required: true
+
+  # Performance regression tests
+  performance:
+    enabled: true
+    description: "Performance regression and benchmarking"
+    timeout_minutes: 5
+    required: false
+
+# Shared Test Environments
+shared_environments:
+
+  # Mock Proxmox environment
+  mock_proxmox:
+    enabled: true
+    description: "Mock Proxmox VE API for testing"
+    port: 8080
+    data_file: "mock-proxmox-data.json"
+
+  # Mock network environment
+  mock_network:
+    enabled: true
+    description: "Mock network infrastructure for testing"
+    subnets:
+      - "10.0.10.0/24"  # Management
+      - "10.0.20.0/24"  # Storage
+      - "10.0.30.0/24"  # Compute
+
+  # Mock storage environment
+  mock_storage:
+    enabled: true
+    description: "Mock storage systems for testing"
+    volumes:
+      - name: "test-vol-1"
+        size: "100G"
+        type: "ssd"
+      - name: "test-vol-2"
+        size: "500G"
+        type: "hdd"
+
+# Test Data Configuration
+test_data:
+  # Sample configurations for testing
+  sample_configs:
+    - "config/site-example.yml"
+    - "config/development-example.yml"
+    - "config/k3s-example.yml"
+
+  # Test scenarios
+  scenarios:
+    - name: "basic-deployment"
+      description: "Basic infrastructure deployment test"
+      config: "config/site-example.yml"
+
+    - name: "multi-node-cluster"
+      description: "Multi-node cluster deployment test"
+      config: "config/k3s-example.yml"
+
+    - name: "development-environment"
+      description: "Development environment setup test"
+      config: "config/development-example.yml"
+
+# Reporting Configuration
+reporting:
+  # Report formats
+  formats:
+    - "markdown"
+    - "json"
+    - "junit"
+
+  # Report destinations
+  destinations:
+    - type: "file"
+      path: "build/integration-test-results"
+    - type: "artifact"
+      name: "integration-test-results"
+
+  # Notification settings
+  notifications:
+    on_failure: true
+    on_success: false
+    webhook_url: ""  # Set this for external notifications
+
+# Performance Baselines
+performance_baselines:
+  # Maximum acceptable execution times (seconds)
+  max_execution_times:
+    cross_submodule_test: 300
+    contract_test: 450
+    e2e_deployment_test: 600
+    performance_test: 150
+
+  # Performance thresholds
+  thresholds:
+    memory_usage_percent: 80
+    cpu_usage_percent: 70
+    disk_io_mbps: 100
+
+# Security Testing Configuration
+security_testing:
+  enabled: true
+  scan_types:
+    - "secrets_detection"
+    - "vulnerability_scanning"
+    - "permission_auditing"
+
+  # Security test settings
+  secrets_patterns:
+    - "password.*="
+    - "secret.*="
+    - "key.*="
+    - "token.*="
+
+# Integration Test Dependencies
+dependencies:
+  # Required tools and versions
+  required_tools:
+    - name: "bash"
+      version: ">= 4.0"
+    - name: "docker"
+      version: ">= 20.0"
+    - name: "ansible"
+      version: ">= 2.10"
+    - name: "terraform"
+      version: ">= 1.0"
+
+  # Optional tools
+  optional_tools:
+    - name: "kubectl"
+      version: ">= 1.20"
+    - name: "helm"
+      version: ">= 3.0"
+
+# Test Execution Rules
+execution_rules:
+  # Failure handling
+  fail_fast: false
+  continue_on_error: true
+
+  # Retry configuration
+  retry_on_failure: true
+  max_retries: 2
+  retry_delay_seconds: 5
+
+  # Test isolation
+  isolate_tests: true
+  cleanup_between_tests: true
+
+# Monitoring and Observability
+monitoring:
+  enabled: true
+  metrics:
+    - "test_execution_time"
+    - "test_success_rate"
+    - "resource_usage"
+    - "error_rate"
+
+  # Alert thresholds
+  alerts:
+    test_failure_threshold: 5  # Alert if more than 5 tests fail
+    performance_degradation_threshold: 20  # Alert if performance drops by 20%
+
+# Advanced Configuration
+advanced:
+  # Debug settings
+  debug_mode: false
+  verbose_logging: false
+
+  # Custom test hooks
+  hooks:
+    pre_test: ""      # Script to run before tests
+    post_test: ""     # Script to run after tests
+    on_failure: ""    # Script to run on test failure
+
+  # Custom environment variables
+  environment_variables:
+    INTEGRATION_TEST_MODE: "true"
+    TEST_DATA_PATH: "./test-data"
+    MOCK_SERVICES_ENABLED: "true"

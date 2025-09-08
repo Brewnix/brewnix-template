@@ -1,0 +1,81 @@
+{
+  "version": {
+    "version": "8.1-1",
+    "release": "8.1",
+    "repoid": "main"
+  },
+  "nodes": [
+    {
+      "id": "node1",
+      "name": "proxmox-node-01",
+      "type": "node",
+      "status": "online",
+      "cpu": 0.15,
+      "memory": {
+        "used": 2147483648,
+        "total": 8589934592
+      },
+      "storage": {
+        "used": 10737418240,
+        "total": 53687091200
+      }
+    }
+  ],
+  "pools": [
+    {
+      "poolid": "test-pool",
+      "comment": "Test pool for integration testing"
+    }
+  ],
+  "storage": [
+    {
+      "id": "local",
+      "type": "dir",
+      "content": "iso,vztmpl,backup",
+      "enabled": 1,
+      "shared": 0,
+      "used": 10737418240,
+      "total": 53687091200
+    },
+    {
+      "id": "local-lvm",
+      "type": "lvmthin",
+      "content": "rootdir,images",
+      "enabled": 1,
+      "shared": 0,
+      "used": 5368709120,
+      "total": 107374182400
+    }
+  ],
+  "vms": [
+    {
+      "vmid": 100,
+      "name": "test-vm-01",
+      "status": "stopped",
+      "cpus": 2,
+      "memory": 2048,
+      "disk": 32,
+      "node": "proxmox-node-01"
+    },
+    {
+      "vmid": 101,
+      "name": "test-vm-02",
+      "status": "running",
+      "cpus": 4,
+      "memory": 4096,
+      "disk": 64,
+      "node": "proxmox-node-01"
+    }
+  ],
+  "lxc": [
+    {
+      "vmid": 200,
+      "name": "test-lxc-01",
+      "status": "running",
+      "cpus": 1,
+      "memory": 1024,
+      "disk": 16,
+      "node": "proxmox-node-01"
+    }
+  ]
+}
