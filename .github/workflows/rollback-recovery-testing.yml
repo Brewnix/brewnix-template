@@ -1,0 +1,316 @@
+name: Rollback and Recovery Testing
+on:
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of rollback/recovery test to run'
+        required: true
+        default: 'comprehensive'
+        type: choice
+        options:
+          - comprehensive
+          - rollback-only
+          - backup-restore-only
+          - chaos-only
+          - disaster-recovery-only
+      environment:
+        description: 'Target environment for testing'
+        required: false
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+          - development
+      deployment_id:
+        description: 'Specific deployment ID to rollback (leave empty for latest)'
+        required: false
+        type: string
+  schedule:
+    # Run comprehensive tests weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_run:
+    workflows: ["Staging Automation"]
+    types: [completed]
+    branches: [main]
+
+env:
+  WORKING_DIR: ${{ github.workspace }}
+  LOG_DIR: logs/rollback-testing
+  BACKUP_DIR: backups/rollback-testing
+  CHAOS_DURATION: 300  # 5 minutes
+  RECOVERY_TIMEOUT: 1800  # 30 minutes
+
+jobs:
+  setup-test-environment:
+    name: Setup Test Environment
+    runs-on: ubuntu-latest
+    outputs:
+      test-environment: ${{ steps.setup.outputs.environment }}
+      deployment-id: ${{ steps.setup.outputs.deployment_id }}
+      backup-path: ${{ steps.setup.outputs.backup_path }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup test environment
+        id: setup
+        run: |
+          echo "Setting up rollback and recovery test environment..."
+
+          # Create log and backup directories
+          mkdir -p ${{ env.LOG_DIR }}
+          mkdir -p ${{ env.BACKUP_DIR }}
+
+          # Determine test environment
+          TEST_ENV="${{ github.event.inputs.environment || 'staging' }}"
+          echo "test-environment=$TEST_ENV" >> $GITHUB_OUTPUT
+
+          # Get deployment ID
+          DEPLOYMENT_ID="${{ github.event.inputs.deployment_id }}"
+          if [ -z "$DEPLOYMENT_ID" ]; then
+            DEPLOYMENT_ID=$(date +%Y%m%d-%H%M%S)
+          fi
+          echo "deployment-id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+
+          # Setup backup path
+          BACKUP_PATH="${{ env.BACKUP_DIR }}/$DEPLOYMENT_ID"
+          echo "backup-path=$BACKUP_PATH" >> $GITHUB_OUTPUT
+
+          echo "Test environment setup complete"
+
+  automated-rollback-test:
+    name: Automated Rollback Test
+    runs-on: ubuntu-latest
+    needs: setup-test-environment
+    if: github.event.inputs.test_type == 'comprehensive' || github.event.inputs.test_type == 'rollback-only'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for staging access
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+
+      - name: Run automated rollback test
+        run: |
+          echo "Running automated rollback test..."
+          chmod +x scripts/rollback/rollback-deployment.sh
+          ./scripts/rollback/rollback-deployment.sh \
+            --environment ${{ needs.setup-test-environment.outputs.test-environment }} \
+            --deployment-id ${{ needs.setup-test-environment.outputs.deployment-id }} \
+            --log-dir ${{ env.LOG_DIR }} \
+            --backup-dir ${{ needs.setup-test-environment.outputs.backup-path }}
+
+      - name: Upload rollback test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rollback-test-results-${{ needs.setup-test-environment.outputs.deployment-id }}
+          path: ${{ env.LOG_DIR }}/rollback-test-*.log
+          retention-days: 30
+
+  backup-restore-validation:
+    name: Backup and Restore Validation
+    runs-on: ubuntu-latest
+    needs: setup-test-environment
+    if: github.event.inputs.test_type == 'comprehensive' || github.event.inputs.test_type == 'backup-restore-only'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for staging access
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+
+      - name: Run backup and restore validation
+        run: |
+          echo "Running backup and restore validation..."
+          chmod +x scripts/rollback/validate-backup-restore.sh
+          ./scripts/rollback/validate-backup-restore.sh \
+            --environment ${{ needs.setup-test-environment.outputs.test-environment }} \
+            --deployment-id ${{ needs.setup-test-environment.outputs.deployment-id }} \
+            --log-dir ${{ env.LOG_DIR }} \
+            --backup-dir ${{ needs.setup-test-environment.outputs.backup-path }}
+
+      - name: Upload backup-restore test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backup-restore-test-results-${{ needs.setup-test-environment.outputs.deployment-id }}
+          path: ${{ env.LOG_DIR }}/backup-restore-test-*.log
+          retention-days: 30
+
+  chaos-engineering-test:
+    name: Chaos Engineering Test
+    runs-on: ubuntu-latest
+    needs: setup-test-environment
+    if: github.event.inputs.test_type == 'comprehensive' || github.event.inputs.test_type == 'chaos-only'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for staging access
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+
+      - name: Run chaos engineering test
+        run: |
+          echo "Running chaos engineering test..."
+          chmod +x scripts/rollback/chaos-engineering.sh
+          ./scripts/rollback/chaos-engineering.sh \
+            --environment ${{ needs.setup-test-environment.outputs.test-environment }} \
+            --deployment-id ${{ needs.setup-test-environment.outputs.deployment-id }} \
+            --duration ${{ env.CHAOS_DURATION }} \
+            --log-dir ${{ env.LOG_DIR }} \
+            --backup-dir ${{ needs.setup-test-environment.outputs.backup-path }}
+
+      - name: Upload chaos test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chaos-test-results-${{ needs.setup-test-environment.outputs.deployment-id }}
+          path: ${{ env.LOG_DIR }}/chaos-test-*.log
+          retention-days: 30
+
+  disaster-recovery-test:
+    name: Disaster Recovery Test
+    runs-on: ubuntu-latest
+    needs: setup-test-environment
+    if: github.event.inputs.test_type == 'comprehensive' || github.event.inputs.test_type == 'disaster-recovery-only'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for staging access
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+
+      - name: Run disaster recovery test
+        run: |
+          echo "Running disaster recovery test..."
+          chmod +x scripts/rollback/disaster-recovery.sh
+          ./scripts/rollback/disaster-recovery.sh \
+            --environment ${{ needs.setup-test-environment.outputs.test-environment }} \
+            --deployment-id ${{ needs.setup-test-environment.outputs.deployment-id }} \
+            --timeout ${{ env.RECOVERY_TIMEOUT }} \
+            --log-dir ${{ env.LOG_DIR }} \
+            --backup-dir ${{ needs.setup-test-environment.outputs.backup-path }}
+
+      - name: Upload disaster recovery test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: disaster-recovery-test-results-${{ needs.setup-test-environment.outputs.deployment-id }}
+          path: ${{ env.LOG_DIR }}/disaster-recovery-test-*.log
+          retention-days: 30
+
+  generate-test-report:
+    name: Generate Test Report
+    runs-on: ubuntu-latest
+    needs: [setup-test-environment, automated-rollback-test, backup-restore-validation, chaos-engineering-test, disaster-recovery-test]
+    if: always()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: test-artifacts
+
+      - name: Generate comprehensive test report
+        run: |
+          echo "Generating comprehensive rollback and recovery test report..."
+          chmod +x scripts/rollback/generate-test-report.sh
+          ./scripts/rollback/generate-test-report.sh \
+            --artifacts-dir test-artifacts \
+            --output-dir reports \
+            --deployment-id ${{ needs.setup-test-environment.outputs.deployment-id }} \
+            --test-type ${{ github.event.inputs.test_type || 'comprehensive' }}
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: rollback-recovery-test-report-${{ needs.setup-test-environment.outputs.deployment-id }}
+          path: reports/
+          retention-days: 90
+
+      - name: Create GitHub Issue for test results
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const testType = '${{ github.event.inputs.test_type || "comprehensive" }}';
+            const deploymentId = '${{ needs.setup-test-environment.outputs.deployment_id }}';
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Rollback & Recovery Test Failed: ${testType} - ${deploymentId}`,
+              body: `## Rollback and Recovery Test Failure
+
+              **Test Type:** ${testType}
+              **Deployment ID:** ${deploymentId}
+              **Environment:** ${{ needs.setup-test-environment.outputs.test-environment }}
+              **Timestamp:** ${new Date().toISOString()}
+
+              ### Test Results
+              Some tests failed during the rollback and recovery testing phase.
+
+              ### Next Steps
+              1. Review the test artifacts and logs
+              2. Investigate the root cause of failures
+              3. Fix identified issues
+              4. Re-run the tests
+
+              ### Artifacts
+              - Test logs: Available in workflow artifacts
+              - Test report: Available in workflow artifacts
+
+              /cc @devops-team`,
+              labels: ['rollback-testing', 'failure', 'urgent']
+            });
+
+  cleanup-test-environment:
+    name: Cleanup Test Environment
+    runs-on: ubuntu-latest
+    needs: [setup-test-environment, generate-test-report]
+    if: always()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for staging access
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+
+      - name: Cleanup test environment
+        run: |
+          echo "Cleaning up rollback and recovery test environment..."
+          chmod +x scripts/rollback/cleanup-test-environment.sh
+          ./scripts/rollback/cleanup-test-environment.sh \
+            --environment ${{ needs.setup-test-environment.outputs.test-environment }} \
+            --deployment-id ${{ needs.setup-test-environment.outputs.deployment-id }} \
+            --backup-dir ${{ needs.setup-test-environment.outputs.backup-path }}
+
+      - name: Archive old test artifacts
+        run: |
+          echo "Archiving old test artifacts..."
+          # Keep only last 10 test runs
+          ls -t ${{ env.LOG_DIR }}/ | tail -n +11 | xargs -I {} rm -rf ${{ env.LOG_DIR }}/{} || true
+          ls -t ${{ env.BACKUP_DIR }}/ | tail -n +11 | xargs -I {} rm -rf ${{ env.BACKUP_DIR }}/{} || true
