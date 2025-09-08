@@ -38,15 +38,28 @@ init_logging() {
 
     # Create logs directory if it doesn't exist
     local log_dir
-    log_dir="$(dirname "$LOG_FILE")"
-    mkdir -p "$log_dir"
+    log_dir=$(dirname "$LOG_FILE")
+    if [[ ! -d "$log_dir" ]]; then
+        mkdir -p "$log_dir" 2>/dev/null || {
+            # If we can't create the directory, fallback to current directory
+            LOG_FILE="./brewnix.log"
+            log_dir="."
+        }
+    fi
 
-    # Initialize log file
-    if [[ ! -f "$LOG_FILE" ]]; then
-        echo "# BrewNix Log File" > "$LOG_FILE"
-        echo "# Started: $(date)" >> "$LOG_FILE"
-        echo "# Log Level: $LOG_LEVEL" >> "$LOG_FILE"
-        echo "" >> "$LOG_FILE"
+    # Set default log level
+    if [[ -z "$LOG_LEVEL" ]]; then
+        LOG_LEVEL="INFO"
+    fi
+
+    # Set default verbosity
+    if [[ -z "$VERBOSE" ]]; then
+        VERBOSE=false
+    fi
+
+    # Set default dry run
+    if [[ -z "$DRY_RUN" ]]; then
+        DRY_RUN=false
     fi
 
     log_info "Logging initialized - Level: $LOG_LEVEL, File: $LOG_FILE"
@@ -133,6 +146,11 @@ log_warn() {
 # Error log
 log_error() {
     log_message "ERROR" "$*"
+}
+
+# Success log
+log_success() {
+    log_message "INFO" "✅ $*"
 }
 
 # Fatal error (exits script)
