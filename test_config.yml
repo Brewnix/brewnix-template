@@ -1,0 +1,5 @@
+test:
+  value1: "test_value"
+  value2: 42
+  nested:
+    key: "nested_value"
